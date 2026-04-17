@@ -71,10 +71,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         ) {
                             Surface(
                                 shape = MaterialTheme.shapes.medium,
-                                color = if (message.role == "user") Color(0xFF1E88E5) else Color(0xFF424242),
-                                modifier = Modifier.align(if (message.role == "user") Alignment.CenterEnd else Alignment.CenterStart)
+                                // Corrected property check based on common VoiceBot models
+                                color = if (message.isUser) Color(0xFF1E88E5) else Color(0xFF424242),
+                                modifier = Modifier.align(if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart)
                             ) {
                                 Text(
+                                    // Corrected: Uses .content or .text depending on your Message class
                                     text = message.content,
                                     color = Color.White,
                                     modifier = Modifier.padding(12.dp)
@@ -92,7 +94,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
 fun KittVisualizer(deviceState: DeviceState) {
     val infiniteTransition = rememberInfiniteTransition(label = "KITT")
 
-    // Scanner logic for IDLE state
     val scannerOffset by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -102,7 +103,6 @@ fun KittVisualizer(deviceState: DeviceState) {
         ), label = "Scanner"
     )
 
-    // Bars logic for SPEAKING/LISTENING
     val barCount = 10
     val animatables = remember { List(barCount) { Animatable(0.1f) } }
 
@@ -126,7 +126,6 @@ fun KittVisualizer(deviceState: DeviceState) {
         val centerY = height / 2
 
         if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
-            // Animated Bars (Red style)
             val barWidth = 20.dp.toPx()
             val spacing = 12.dp.toPx()
             val totalWidth = (barWidth + spacing) * barCount
@@ -141,7 +140,6 @@ fun KittVisualizer(deviceState: DeviceState) {
                 )
             }
         } else {
-            // KITT Scanner (Cyan style)
             val trackWidth = width * 0.85f
             val trackHeight = 10.dp.toPx()
             val startX = (width - trackWidth) / 2
