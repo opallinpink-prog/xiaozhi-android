@@ -1,177 +1,151 @@
 package info.dourok.voicebot.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import info.dourok.voicebot.viewmodel.ChatViewModel
+import info.dourok.voicebot.state.DeviceState // Assuming State enum location
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(
-    viewModel: ChatViewMode = hiltViewModel()
-) {
-    val messages by viewModel.display.chatFlow.collectAsState()
-    val emotion by viewModel.display.emotionFlow.collectAsState()
-    val deviceState by viewModel.deviceStateFlow.collectAsState() // Added device state
-    // Emotion to emoji mapping
-    val emotionEmojiMap = mapOf(
-        "neutral" to "😐",
-        "happy" to "😊",
-        "laughing" to "😂",
-        "funny" to "🤡",
-        "sad" to "😢",
-        "angry" to "😠",
-        "crying" to "😭",
-        "loving" to "🥰",
-        "embarrassed" to "😳",
-        "surprised" to "😮",
-        "shocked" to "😱",
-        "thinking" to "🤔",
-        "winking" to "😉",
-        "cool" to "😎",
-        "relaxed" to "😌",
-        "delicious" to "😋",
-        "kissy" to "😘",
-        "confident" to "😏",
-        "sleepy" to "😴",
-        "silly" to "🤪",
-        "confused" to "😕"
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Emotion display at top center with bigger emoji
+fun ChatScreen(viewModel: ChatViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    var showChatMessages by remember { mutableStateOf(true) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Xiaozhi Assistant") },
+                actions = {
+                    IconButton(onClick = { showChatMessages = !showChatMessages }) {
+                        Icon(
+                            imageVector = if (showChatMessages) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Toggle Chat"
+                        )
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
         Box(
             modifier = Modifier
-                .padding(vertical = 16.dp),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color.Black) // KITT style background
         ) {
-            when (deviceState) {
-                DeviceState.CONNECTING, DeviceState.STARTING -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(64.dp), // 与emoji大小匹配
-                        strokeWidth = 4.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                else -> {
-                    Text(
-                        text = emotionEmojiMap[emotion.lowercase()] ?: "😐",
-                        style = TextStyle(
-                            fontSize = 64.sp,
-                            lineHeight = 64.sp
-                        )
-                    )
-                }
-            }
-        }
+            // 1. Full Screen Visualizer (Bottom Layer)
+            KittVisualizer(deviceState = uiState.deviceState)
 
-        // Device State Text
-        Text(
-            text = deviceState.name.lowercase()
-                .replaceFirstChar { it.uppercase() },
-            style = MaterialTheme.typography.bodySmall,
-            color = when (deviceState) {
-                DeviceState.FATAL_ERROR -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f),
-            reverseLayout = true,
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(messages.reversed()) { message ->
-                ChatMessageItem(message)
+            // 2. Chat Messages (Top Layer)
+            AnimatedVisibility(
+                visible = showChatMessages,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    reverseLayout = true // Keeping latest messages at bottom
+                ) {
+                    items(uiState.messages) { message ->
+                        ChatMessageRow(message)
+                    }
+                }
             }
         }
     }
 }
 
-
 @Composable
-fun ChatMessageItem(message: Message) {
-    val isCurrentUser = message.sender == "user"
+fun KittVisualizer(deviceState: DeviceState) {
+    val infiniteTransition = rememberInfiniteTransition(label = "KITT")
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        horizontalArrangement = if (isCurrentUser) Arrangement.End else Arrangement.Start
-    ) {
-        Card(
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isCurrentUser)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.surfaceVariant
-            ),
-            modifier = Modifier.widthIn(max = 300.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp)
-            ) {
-                Text(
-                    text = message.sender,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isCurrentUser)
-                        MaterialTheme.colorScheme.onPrimary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = message.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isCurrentUser)
-                        MaterialTheme.colorScheme.onPrimary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-                Text(
-                    text = message.nowInString,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isCurrentUser)
-                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .padding(top = 4.dp)
-                        .align(Alignment.End)
+    // Scanner Animation (Idle)
+    val scannerOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "Scanner"
+    )
+
+    // Voice Bars Animation (Speaking/Listening)
+    val barCount = 12
+    val animatables = remember { List(barCount) { Animatable(0.2f) } }
+
+    if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
+        animatables.forEachIndexed { index, animatable ->
+            LaunchedEffect(deviceState) {
+                animatable.animateTo(
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(
+                            durationMillis = 400 + (index * 50),
+                            easing = FastOutSlowInEasing
+                        ),
+                        repeatMode = RepeatMode.Reverse
+                    )
                 )
             }
+        }
+    }
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val width = size.width
+        val height = size.height
+        val centerY = height / 2
+
+        if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
+            // --- AUDIO VISUALIZER MODE ---
+            val barWidth = 15.dp.toPx()
+            val spacing = 10.dp.toPx()
+            val totalWidth = (barWidth + spacing) * barCount
+            val startX = (width - totalWidth) / 2
+
+            for (i in 0 until barCount) {
+                val barHeight = (height * 0.3f) * animatables[i].value
+                drawRect(
+                    color = Color.Red,
+                    topLeft = Offset(startX + i * (barWidth + spacing), centerY - barHeight / 2),
+                    size = Size(barWidth, barHeight)
+                )
+            }
+        } else {
+            // --- KITT IDLE SCANNER MODE ---
+            val trackWidth = width * 0.8f
+            val trackHeight = 8.dp.toPx()
+            val startX = (width - trackWidth) / 2
+            
+            // Draw background track
+            drawRect(
+                color = Color.DarkGray,
+                topLeft = Offset(startX, centerY - trackHeight / 2),
+                size = Size(trackWidth, trackHeight)
+            )
+
+            // Draw moving scanner head
+            val scannerWidth = trackWidth * 0.2f
+            val currentX = startX + (trackWidth - scannerWidth) * scannerOffset
+            drawRect(
+                color = Color.Cyan,
+                topLeft = Offset(currentX, centerY - trackHeight / 2),
+                size = Size(scannerWidth, trackHeight)
+            )
         }
     }
 }
