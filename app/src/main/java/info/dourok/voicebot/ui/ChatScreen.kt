@@ -30,12 +30,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Xiaozhi Assistant") },
+                title = { Text("Xiaozhi Assistant", color = Color.White) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
                 actions = {
                     IconButton(onClick = { showChatMessages = !showChatMessages }) {
                         Icon(
                             imageVector = if (showChatMessages) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = "Toggle Chat"
+                            contentDescription = "Toggle Chat",
+                            tint = Color.White
                         )
                     }
                 }
@@ -62,16 +64,22 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     reverseLayout = true
                 ) {
                     items(uiState.messages) { message ->
-                        // Standard message display logic
-                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Text(
-                                text = message.content,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .background(if (message.isUser) Color.DarkGray else Color.Blue)
-                                    .padding(8.dp)
-                                    .align(if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart)
-                            )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Surface(
+                                shape = MaterialTheme.shapes.medium,
+                                color = if (message.role == "user") Color(0xFF1E88E5) else Color(0xFF424242),
+                                modifier = Modifier.align(if (message.role == "user") Alignment.CenterEnd else Alignment.CenterStart)
+                            ) {
+                                Text(
+                                    text = message.content,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -84,17 +92,19 @@ fun ChatScreen(viewModel: ChatViewModel) {
 fun KittVisualizer(deviceState: DeviceState) {
     val infiniteTransition = rememberInfiniteTransition(label = "KITT")
 
+    // Scanner logic for IDLE state
     val scannerOffset by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(1500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ), label = "Scanner"
     )
 
-    val barCount = 12
-    val animatables = remember { List(barCount) { Animatable(0.2f) } }
+    // Bars logic for SPEAKING/LISTENING
+    val barCount = 10
+    val animatables = remember { List(barCount) { Animatable(0.1f) } }
 
     if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
         animatables.forEachIndexed { index, animatable ->
@@ -102,10 +112,7 @@ fun KittVisualizer(deviceState: DeviceState) {
                 animatable.animateTo(
                     targetValue = 1f,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(
-                            durationMillis = 400 + (index * 50),
-                            easing = FastOutSlowInEasing
-                        ),
+                        animation = tween(durationMillis = 300 + (index * 70)),
                         repeatMode = RepeatMode.Reverse
                     )
                 )
@@ -119,31 +126,33 @@ fun KittVisualizer(deviceState: DeviceState) {
         val centerY = height / 2
 
         if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
-            val barWidth = 15.dp.toPx()
-            val spacing = 10.dp.toPx()
+            // Animated Bars (Red style)
+            val barWidth = 20.dp.toPx()
+            val spacing = 12.dp.toPx()
             val totalWidth = (barWidth + spacing) * barCount
             val startX = (width - totalWidth) / 2
 
             for (i in 0 until barCount) {
-                val barHeight = (height * 0.3f) * animatables[i].value
+                val currentBarHeight = (height * 0.4f) * animatables[i].value
                 drawRect(
                     color = Color.Red,
-                    topLeft = Offset(startX + i * (barWidth + spacing), centerY - barHeight / 2),
-                    size = Size(barWidth, barHeight)
+                    topLeft = Offset(startX + i * (barWidth + spacing), centerY - currentBarHeight / 2),
+                    size = Size(barWidth, currentBarHeight)
                 )
             }
         } else {
-            val trackWidth = width * 0.8f
-            val trackHeight = 8.dp.toPx()
+            // KITT Scanner (Cyan style)
+            val trackWidth = width * 0.85f
+            val trackHeight = 10.dp.toPx()
             val startX = (width - trackWidth) / 2
             
             drawRect(
-                color = Color.DarkGray,
+                color = Color(0xFF212121),
                 topLeft = Offset(startX, centerY - trackHeight / 2),
                 size = Size(trackWidth, trackHeight)
             )
 
-            val scannerWidth = trackWidth * 0.2f
+            val scannerWidth = trackWidth * 0.25f
             val currentX = startX + (trackWidth - scannerWidth) * scannerOffset
             drawRect(
                 color = Color.Cyan,
