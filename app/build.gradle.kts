@@ -83,10 +83,8 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.hilt.android)
     kapt(libs.hilt.android.compiler)
-    // Required for the AnimatedVisibility and KITT animations
-    implementation "androidx.compose.animation:animation:1.7.0" 
-    // Optional: if you want more complex graphics for the visualizer
-    implementation "androidx.compose.ui:ui-graphics"
+    implementation("androidx.compose.animation:animation:1.7.0")
+    implementation("androidx.compose.ui:ui-graphics")
     implementation(libs.paho.mqtt.android)
 
     testImplementation(kotlin("test"))
