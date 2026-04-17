@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue // CRITICAL: Fixes the 'Property delegate' error
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -71,12 +72,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         ) {
                             Surface(
                                 shape = MaterialTheme.shapes.medium,
-                                // Corrected property check based on common VoiceBot models
                                 color = if (message.isUser) Color(0xFF1E88E5) else Color(0xFF424242),
                                 modifier = Modifier.align(if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart)
                             ) {
                                 Text(
-                                    // Corrected: Uses .content or .text depending on your Message class
                                     text = message.content,
                                     color = Color.White,
                                     modifier = Modifier.padding(12.dp)
