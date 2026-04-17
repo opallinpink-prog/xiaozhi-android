@@ -12,7 +12,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue // CRITICAL: Fixes the 'Property delegate' error
+import androidx.compose.runtime.getValue // REQUIRED: Fixes "Property delegate" error
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -25,6 +25,7 @@ import info.dourok.voicebot.state.DeviceState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
+    // collectAsState() needs the 'getValue' import to use 'by'
     val uiState by viewModel.uiState.collectAsState()
     var showChatMessages by remember { mutableStateOf(true) }
 
@@ -51,10 +52,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // 1. Full Screen Visualizer (Bottom Layer)
+            // Visualizer background
             KittVisualizer(deviceState = uiState.deviceState)
 
-            // 2. Chat Messages (Top Layer)
+            // Chat Overlay
             AnimatedVisibility(
                 visible = showChatMessages,
                 modifier = Modifier.fillMaxSize()
@@ -92,7 +93,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
 @Composable
 fun KittVisualizer(deviceState: DeviceState) {
     val infiniteTransition = rememberInfiniteTransition(label = "KITT")
-
     val scannerOffset by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -105,13 +105,14 @@ fun KittVisualizer(deviceState: DeviceState) {
     val barCount = 10
     val animatables = remember { List(barCount) { Animatable(0.1f) } }
 
+    // Animate bars when talking/listening
     if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
         animatables.forEachIndexed { index, animatable ->
             LaunchedEffect(deviceState) {
                 animatable.animateTo(
                     targetValue = 1f,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 300 + (index * 70)),
+                        animation = tween(300 + (index * 70)),
                         repeatMode = RepeatMode.Reverse
                     )
                 )
@@ -120,42 +121,20 @@ fun KittVisualizer(deviceState: DeviceState) {
     }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val width = size.width
-        val height = size.height
-        val centerY = height / 2
-
+        val centerY = size.height / 2
         if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
             val barWidth = 20.dp.toPx()
             val spacing = 12.dp.toPx()
-            val totalWidth = (barWidth + spacing) * barCount
-            val startX = (width - totalWidth) / 2
-
+            val startX = (size.width - ((barWidth + spacing) * barCount)) / 2
             for (i in 0 until barCount) {
-                val currentBarHeight = (height * 0.4f) * animatables[i].value
-                drawRect(
-                    color = Color.Red,
-                    topLeft = Offset(startX + i * (barWidth + spacing), centerY - currentBarHeight / 2),
-                    size = Size(barWidth, currentBarHeight)
-                )
+                val h = (size.height * 0.4f) * animatables[i].value
+                drawRect(Color.Red, Offset(startX + i * (barWidth + spacing), centerY - h / 2), Size(barWidth, h))
             }
         } else {
-            val trackWidth = width * 0.85f
-            val trackHeight = 10.dp.toPx()
-            val startX = (width - trackWidth) / 2
-            
-            drawRect(
-                color = Color(0xFF212121),
-                topLeft = Offset(startX, centerY - trackHeight / 2),
-                size = Size(trackWidth, trackHeight)
-            )
-
-            val scannerWidth = trackWidth * 0.25f
-            val currentX = startX + (trackWidth - scannerWidth) * scannerOffset
-            drawRect(
-                color = Color.Cyan,
-                topLeft = Offset(currentX, centerY - trackHeight / 2),
-                size = Size(scannerWidth, trackHeight)
-            )
+            val trackWidth = size.width * 0.8f
+            val startX = (size.width - trackWidth) / 2
+            drawRect(Color.DarkGray, Offset(startX, centerY - 5f), Size(trackWidth, 10f))
+            drawRect(Color.Cyan, Offset(startX + (trackWidth - 100f) * scannerOffset, centerY - 5f), Size(100f, 10f))
         }
     }
 }
