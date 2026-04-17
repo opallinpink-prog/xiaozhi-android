@@ -22,14 +22,13 @@ import info.dourok.voicebot.ui.ActivationScreen
 import info.dourok.voicebot.ui.ChatScreen
 import info.dourok.voicebot.ui.ServerFormScreen
 import info.dourok.voicebot.ui.theme.VoicebotclientandroidTheme
-import info.dourok.voicebot.viewmodel.ChatViewModel
+import info.dourok.voicebot.ui.ChatViewModel // CORRECTED IMPORT
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Audio Permissions
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 0)
         }
@@ -52,7 +51,6 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val activity = LocalContext.current as Activity
     
-    // Using EntryPointAccessors to get the navigation events from the Hilt entry point
     val entryPoint = EntryPointAccessors.fromActivity(activity, NavigationEntryPoint::class.java)
     val navigationEvents = entryPoint.getNavigationEvents()
 
@@ -66,7 +64,6 @@ fun AppNavigation() {
         composable("form") { ServerFormScreen() }
         composable("activation") { ActivationScreen() }
         composable("chat") { 
-            // Injects the ChatViewModel correctly
             val chatViewModel: ChatViewModel = hiltViewModel()
             ChatScreen(viewModel = chatViewModel) 
         }
