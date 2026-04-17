@@ -81,7 +81,7 @@ fun AppNavigation() {
         composable("form") { ServerFormScreen() }
         composable("activation") { ActivationScreen() }
         composable("chat") { 
-            // Correctly passing the injected ViewModel to ChatScreen
+            // Injects the ChatViewModel using Hilt
             val chatViewModel: ChatViewModel = hiltViewModel()
             ChatScreen(viewModel = chatViewModel) 
         }
