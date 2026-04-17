@@ -22,7 +22,7 @@ import info.dourok.voicebot.ui.ActivationScreen
 import info.dourok.voicebot.ui.ChatScreen
 import info.dourok.voicebot.ui.ServerFormScreen
 import info.dourok.voicebot.ui.theme.VoicebotclientandroidTheme
-import info.dourok.voicebot.ui.ChatViewModel // CORRECTED IMPORT
+import info.dourok.voicebot.ui.ChatViewModel // Fixed import path
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
