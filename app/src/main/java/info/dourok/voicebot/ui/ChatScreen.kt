@@ -12,20 +12,19 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue // REQUIRED: Fixes "Property delegate" error
+import androidx.compose.runtime.getValue // Fixes the "Property delegate" error
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import info.dourok.voicebot.viewmodel.ChatViewModel
-import info.dourok.voicebot.state.DeviceState
+
+// NOTE: We don't need to import ChatViewModel if it's in the same 'ui' package!
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
-    // collectAsState() needs the 'getValue' import to use 'by'
     val uiState by viewModel.uiState.collectAsState()
     var showChatMessages by remember { mutableStateOf(true) }
 
@@ -52,10 +51,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // Visualizer background
+            // Visualizer background using state from the ViewModel
             KittVisualizer(deviceState = uiState.deviceState)
 
-            // Chat Overlay
             AnimatedVisibility(
                 visible = showChatMessages,
                 modifier = Modifier.fillMaxSize()
@@ -77,7 +75,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 modifier = Modifier.align(if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart)
                             ) {
                                 Text(
-                                    text = message.content,
+                                    text = message.content, // Using String directly to avoid ambiguity
                                     color = Color.White,
                                     modifier = Modifier.padding(12.dp)
                                 )
@@ -105,8 +103,10 @@ fun KittVisualizer(deviceState: DeviceState) {
     val barCount = 10
     val animatables = remember { List(barCount) { Animatable(0.1f) } }
 
-    // Animate bars when talking/listening
-    if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
+    // Use string/enum comparison for DeviceState
+    val isActive = deviceState.name == "SPEAKING" || deviceState.name == "LISTENING"
+
+    if (isActive) {
         animatables.forEachIndexed { index, animatable ->
             LaunchedEffect(deviceState) {
                 animatable.animateTo(
@@ -122,7 +122,7 @@ fun KittVisualizer(deviceState: DeviceState) {
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val centerY = size.height / 2
-        if (deviceState == DeviceState.SPEAKING || deviceState == DeviceState.LISTENING) {
+        if (isActive) {
             val barWidth = 20.dp.toPx()
             val spacing = 12.dp.toPx()
             val startX = (size.width - ((barWidth + spacing) * barCount)) / 2
