@@ -4,26 +4,18 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.ActivityCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import info.dourok.voicebot.ui.ActivationScreen
@@ -34,28 +26,19 @@ import info.dourok.voicebot.viewmodel.ChatViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("MainActivity", "onCreate")
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.RECORD_AUDIO),
-                0
-            )
-        }
         
+        // Audio Permissions
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 0)
+        }
+
         enableEdgeToEdge()
         setContent {
             VoicebotclientandroidTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Column {
-                        Spacer(modifier = Modifier.height(innerPadding.calculateTopPadding()))
+                    Box(modifier = Modifier.padding(innerPadding)) {
                         AppNavigation()
                     }
                 }
@@ -68,6 +51,8 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation() {
     val navController = rememberNavController()
     val activity = LocalContext.current as Activity
+    
+    // Using EntryPointAccessors to get the navigation events from the Hilt entry point
     val entryPoint = EntryPointAccessors.fromActivity(activity, NavigationEntryPoint::class.java)
     val navigationEvents = entryPoint.getNavigationEvents()
 
@@ -81,7 +66,7 @@ fun AppNavigation() {
         composable("form") { ServerFormScreen() }
         composable("activation") { ActivationScreen() }
         composable("chat") { 
-            // Injects the ChatViewModel using Hilt
+            // Injects the ChatViewModel correctly
             val chatViewModel: ChatViewModel = hiltViewModel()
             ChatScreen(viewModel = chatViewModel) 
         }
