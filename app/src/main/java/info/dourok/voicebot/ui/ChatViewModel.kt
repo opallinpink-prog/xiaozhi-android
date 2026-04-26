@@ -24,6 +24,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
 
+// Fixed: Added 'l' to ChatViewModel
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -50,19 +51,13 @@ class ChatViewModel @Inject constructor(
     var keepListening: Boolean = true
 
     val deviceStateFlow = MutableStateFlow(DeviceState.IDLE)
-
-    // ── Amplitude from the player, flattened to a single flow ───────────────
-    // When player is null (not yet created) we emit 0f.
-    // switchMap re-subscribes automatically once player is assigned.
-    private val _playerAmplitude = MutableStateFlow(0f)
-
-    // ── Combined UI state ────────────────────────────────────────────────────
+    
+    // Bridge for the UI: Combines chat messages and device state into one object
     val uiState: StateFlow<ChatUiState> = combine(
         display.chatFlow,
-        deviceStateFlow,
-        _playerAmplitude
-    ) { messages, state, amplitude ->
-        ChatUiState(messages, state, amplitude)
+        deviceStateFlow
+    ) { messages, state ->
+        ChatUiState(messages, state)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatUiState())
 
     var deviceState: DeviceState
@@ -83,14 +78,6 @@ class ChatViewModel @Inject constructor(
                         val frameSizeMs = 60
                         player = OpusStreamPlayer(sampleRate, channels, frameSizeMs)
                         decoder = OpusDecoder(sampleRate, channels, frameSizeMs)
-
-                        // ── Forward player amplitude to the UI state ─────────
-                        launch {
-                            player!!.amplitudeFlow.collect { amp ->
-                                _playerAmplitude.value = amp
-                            }
-                        }
-
                         player?.start(protocol.incomingAudioFlow.map {
                             deviceState = DeviceState.SPEAKING
                             decoder?.decode(it)
@@ -100,9 +87,9 @@ class ChatViewModel @Inject constructor(
             } else {
                 Log.e("WS", "Failed to open audio channel")
             }
-
+            
             delay(1000)
-
+            
             launch {
                 val sampleRate = 16000
                 val channels = 1
@@ -158,6 +145,8 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ... (rest of your toggleChatState, startListening, etc. functions remain the same) ...
+    
     fun toggleChatState() { /* your existing code */ }
     fun startListening() { /* your existing code */ }
     fun abortSpeaking(reason: AbortReason) { /* your existing code */ }
@@ -174,12 +163,10 @@ class ChatViewModel @Inject constructor(
     }
 }
 
-// ── Data classes ─────────────────────────────────────────────────────────────
-
+// Fixed: Unified Data Classes for UI
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
-    val deviceState: DeviceState = DeviceState.IDLE,
-    val speakingAmplitude: Float = 0f          // ← nuovo campo
+    val deviceState: DeviceState = DeviceState.IDLE
 )
 
 enum class DeviceState {
@@ -202,6 +189,7 @@ data class Message(
     val message: String = "",
     val nowInString: String = df.format(System.currentTimeMillis())
 ) {
+    // Helper used by ChatScreen
     val isUser: Boolean get() = sender == "user"
     val content: String get() = message
 }
