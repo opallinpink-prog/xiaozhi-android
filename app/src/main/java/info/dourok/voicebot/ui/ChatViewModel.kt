@@ -23,6 +23,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.sqrt
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -51,18 +52,19 @@ class ChatViewModel @Inject constructor(
 
     val deviceStateFlow = MutableStateFlow(DeviceState.IDLE)
 
-    // ── Amplitude from the player, flattened to a single flow ───────────────
-    // When player is null (not yet created) we emit 0f.
-    // switchMap re-subscribes automatically once player is assigned.
-    private val _playerAmplitude = MutableStateFlow(0f)
+    // ── Amplitudes per i due visualizer ─────────────────────────────────────
+    private val _playerAmplitude = MutableStateFlow(0f)  // audio in uscita → SPEAKING
+    private val _micAmplitude    = MutableStateFlow(0f)  // audio in entrata → LISTENING
 
     // ── Combined UI state ────────────────────────────────────────────────────
+    // combine() accetta al massimo 5 flow; usiamo la variante a 4.
     val uiState: StateFlow<ChatUiState> = combine(
         display.chatFlow,
         deviceStateFlow,
-        _playerAmplitude
-    ) { messages, state, amplitude ->
-        ChatUiState(messages, state, amplitude)
+        _playerAmplitude,
+        _micAmplitude
+    ) { messages, state, spkAmp, micAmp ->
+        ChatUiState(messages, state, spkAmp, micAmp)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatUiState())
 
     var deviceState: DeviceState
@@ -84,7 +86,7 @@ class ChatViewModel @Inject constructor(
                         player = OpusStreamPlayer(sampleRate, channels, frameSizeMs)
                         decoder = OpusDecoder(sampleRate, channels, frameSizeMs)
 
-                        // ── Forward player amplitude to the UI state ─────────
+                        // Forward player amplitude → visualizer SPEAKING
                         launch {
                             player!!.amplitudeFlow.collect { amp ->
                                 _playerAmplitude.value = amp
@@ -110,9 +112,31 @@ class ChatViewModel @Inject constructor(
                 encoder = OpusEncoder(sampleRate, channels, frameSizeMs)
                 recorder = AudioRecorder(sampleRate, channels, frameSizeMs)
                 val audioFlow = recorder?.startRecording()
-                val opusFlow = audioFlow?.map { encoder?.encode(it) }
+
+                // Tap the raw PCM flow → calcola RMS mic SENZA aprire un secondo AudioRecord
+                val opusFlow = audioFlow?.map { pcm ->
+                    // ── RMS sul frame PCM grezzo (16-bit little-endian) ──────
+                    if (pcm != null) {
+                        val sampleCount = pcm.size / 2
+                        if (sampleCount > 0) {
+                            var sum = 0.0
+                            for (i in 0 until sampleCount) {
+                                val sample = ((pcm[i * 2 + 1].toInt() shl 8) or
+                                             (pcm[i * 2].toInt() and 0xFF)).toShort().toDouble()
+                                sum += sample * sample
+                            }
+                            val rms = sqrt(sum / sampleCount).toFloat()
+                            _micAmplitude.value = (rms / 10000f).coerceIn(0f, 1f)
+                        }
+                    }
+                    encoder?.encode(pcm ?: return@map null)
+                }
+
                 deviceState = DeviceState.LISTENING
                 opusFlow?.collect { it?.let { protocol.sendAudio(it) } }
+
+                // Quando il recorder si ferma, azzera l'ampiezza
+                _micAmplitude.value = 0f
             }
 
             launch {
@@ -174,12 +198,13 @@ class ChatViewModel @Inject constructor(
     }
 }
 
-// ── Data classes ─────────────────────────────────────────────────────────────
+// ── Data classes ──────────────────────────────────────────────────────────────
 
 data class ChatUiState(
     val messages: List<Message> = emptyList(),
     val deviceState: DeviceState = DeviceState.IDLE,
-    val speakingAmplitude: Float = 0f          // ← nuovo campo
+    val speakingAmplitude: Float = 0f,   // ampiezza audio in uscita (TTS)
+    val micAmplitude: Float = 0f         // ampiezza microfono in entrata
 )
 
 enum class DeviceState {
