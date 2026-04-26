@@ -67,7 +67,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .background(Color.Black)
         ) {
             // ── Visualizer ──────────────────────────────────────────────────
-            DynamicVisualizer(deviceState = uiState.deviceState)
+            DynamicVisualizer(
+                deviceState = uiState.deviceState,
+                speakingAmplitude = uiState.speakingAmplitude
+            )
 
             // ── Chat overlay ────────────────────────────────────────────────
             AnimatedVisibility(
@@ -111,11 +114,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
 // ---------------------------------------------------------------------------
 
 @Composable
-fun DynamicVisualizer(deviceState: DeviceState) {
+fun DynamicVisualizer(deviceState: DeviceState, speakingAmplitude: Float = 0f) {
     when (deviceState) {
         DeviceState.LISTENING -> ListeningVisualizer()
-        DeviceState.SPEAKING  -> SpeakingVisualizer()
-        else                  -> StandbyVisualizer()   // IDLE, CONNECTING, etc.
+        DeviceState.SPEAKING  -> SpeakingVisualizer(externalAmplitude = speakingAmplitude)
+        else                  -> StandbyVisualizer()
     }
 }
 
