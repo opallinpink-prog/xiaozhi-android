@@ -38,155 +38,148 @@ class ChatViewModel @Inject constructor(
     }
 
     private val protocol: Protocol = when (settings.transportType) {
-        TransportType.MQTT -> MqttProtocol(context, settings.mqttConfig!!)
+        TransportType.MQTT       -> MqttProtocol(context, settings.mqttConfig!!)
         TransportType.WebSockets -> WebsocketProtocol(deviceInfo, settings.webSocketUrl!!, "test-token")
     }
 
-    val display = Display()
-    var encoder: OpusEncoder? = null
-    var decoder: OpusDecoder? = null
-    var recorder: AudioRecorder? = null
+    val display      = Display()
+    var encoder: OpusEncoder?     = null
+    var decoder: OpusDecoder?     = null
+    var recorder: AudioRecorder?  = null
     var player: OpusStreamPlayer? = null
-    var aborted: Boolean = false
-    var keepListening: Boolean = true
+    var aborted     = false
+    var keepListening = true
 
     val deviceStateFlow = MutableStateFlow(DeviceState.IDLE)
 
-    // ── Amplitudes per i due visualizer ─────────────────────────────────────
-    private val _playerAmplitude = MutableStateFlow(0f)  // audio in uscita → SPEAKING
-    private val _micAmplitude    = MutableStateFlow(0f)  // audio in entrata → LISTENING
+    // Amplitudes per i visualizer — StateFlow aggiornabili da qualsiasi thread
+    val playerAmplitude = MutableStateFlow(0f)
+    val micAmplitude    = MutableStateFlow(0f)
 
-    // ── Combined UI state ────────────────────────────────────────────────────
-    // combine() accetta al massimo 5 flow; usiamo la variante a 4.
     val uiState: StateFlow<ChatUiState> = combine(
         display.chatFlow,
         deviceStateFlow,
-        _playerAmplitude,
-        _micAmplitude
+        playerAmplitude,
+        micAmplitude
     ) { messages, state, spkAmp, micAmp ->
         ChatUiState(messages, state, spkAmp, micAmp)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ChatUiState())
 
     var deviceState: DeviceState
-        get() = deviceStateFlow.value
-        set(value) { deviceStateFlow.value = value }
+        get()  = deviceStateFlow.value
+        set(v) { deviceStateFlow.value = v }
 
     init {
         deviceState = DeviceState.STARTING
-        viewModelScope.launch {
+
+        // ── Player + decoder (audio in uscita) ──────────────────────────────
+        viewModelScope.launch(Dispatchers.IO) {
             protocol.start()
-            deviceState = DeviceState.CONNECTING
+            withContext(Dispatchers.Main) { deviceState = DeviceState.CONNECTING }
+
             if (protocol.openAudioChannel()) {
                 protocol.sendStartListening(ListeningMode.AUTO_STOP)
-                withContext(Dispatchers.IO) {
-                    launch {
-                        val sampleRate = 24000
-                        val channels = 1
-                        val frameSizeMs = 60
-                        player = OpusStreamPlayer(sampleRate, channels, frameSizeMs)
-                        decoder = OpusDecoder(sampleRate, channels, frameSizeMs)
 
-                        // Forward player amplitude → visualizer SPEAKING
-                        launch {
-                            player!!.amplitudeFlow.collect { amp ->
-                                _playerAmplitude.value = amp
-                            }
-                        }
+                val sampleRate  = 24000
+                val channels    = 1
+                val frameSizeMs = 60
+                player  = OpusStreamPlayer(sampleRate, channels, frameSizeMs)
+                decoder = OpusDecoder(sampleRate, channels, frameSizeMs)
 
-                        player?.start(protocol.incomingAudioFlow.map {
-                            deviceState = DeviceState.SPEAKING
-                            decoder?.decode(it)
-                        })
+                // Collega amplitudeFlow del player al nostro StateFlow
+                launch {
+                    player!!.amplitudeFlow.collect { amp ->
+                        playerAmplitude.value = amp
                     }
                 }
-            } else {
-                Log.e("WS", "Failed to open audio channel")
-            }
 
+                player?.start(protocol.incomingAudioFlow.map { opusBytes ->
+                    withContext(Dispatchers.Main) { deviceState = DeviceState.SPEAKING }
+                    decoder?.decode(opusBytes)
+                })
+            } else {
+                Log.e(TAG, "Failed to open audio channel")
+            }
+        }
+
+        // ── Recorder + encoder (audio in entrata) ───────────────────────────
+        viewModelScope.launch(Dispatchers.IO) {
             delay(1000)
 
-            launch {
-                val sampleRate = 16000
-                val channels = 1
-                val frameSizeMs = 60
-                encoder = OpusEncoder(sampleRate, channels, frameSizeMs)
-                recorder = AudioRecorder(sampleRate, channels, frameSizeMs)
-                val audioFlow = recorder?.startRecording()
+            val sampleRate  = 16000
+            val channels    = 1
+            val frameSizeMs = 60
+            encoder  = OpusEncoder(sampleRate, channels, frameSizeMs)
+            recorder = AudioRecorder(sampleRate, channels, frameSizeMs)
 
-                // Tap the raw PCM flow → calcola RMS mic SENZA aprire un secondo AudioRecord
-                val opusFlow = audioFlow?.map { pcm ->
-                    // ── RMS sul frame PCM grezzo (16-bit little-endian) ──────
-                    if (pcm != null) {
-                        val sampleCount = pcm.size / 2
-                        if (sampleCount > 0) {
-                            var sum = 0.0
-                            for (i in 0 until sampleCount) {
-                                val sample = ((pcm[i * 2 + 1].toInt() shl 8) or
-                                             (pcm[i * 2].toInt() and 0xFF)).toShort().toDouble()
-                                sum += sample * sample
+            val audioFlow = recorder?.startRecording() ?: return@launch
+
+            withContext(Dispatchers.Main) { deviceState = DeviceState.LISTENING }
+
+            // Un unico collect: calcola RMS mic + encoda + invia, tutto in IO
+            audioFlow.collect { pcm ->
+                if (pcm != null) {
+                    // RMS sul frame PCM grezzo → niente secondo AudioRecord!
+                    val sampleCount = pcm.size / 2
+                    if (sampleCount > 0) {
+                        var sum = 0.0
+                        for (i in 0 until sampleCount) {
+                            val s = ((pcm[i * 2 + 1].toInt() shl 8) or
+                                     (pcm[i * 2].toInt() and 0xFF)).toShort().toDouble()
+                            sum += s * s
+                        }
+                        micAmplitude.value = (sqrt(sum / sampleCount).toFloat() / 10000f).coerceIn(0f, 1f)
+                    }
+                    encoder?.encode(pcm)?.let { protocol.sendAudio(it) }
+                }
+            }
+            micAmplitude.value = 0f
+        }
+
+        // ── JSON dal server ──────────────────────────────────────────────────
+        viewModelScope.launch {
+            protocol.incomingJsonFlow.collect { json ->
+                when (json.optString("type")) {
+                    "tts" -> when (json.optString("state")) {
+                        "start" -> {
+                            aborted = false
+                            if (deviceState == DeviceState.IDLE || deviceState == DeviceState.LISTENING)
+                                deviceState = DeviceState.SPEAKING
+                        }
+                        "stop" -> {
+                            if (deviceState == DeviceState.SPEAKING) {
+                                withContext(Dispatchers.IO) { player?.waitForPlaybackCompletion() }
+                                playerAmplitude.value = 0f
+                                if (keepListening) {
+                                    protocol.sendStartListening(ListeningMode.AUTO_STOP)
+                                    deviceState = DeviceState.LISTENING
+                                } else {
+                                    deviceState = DeviceState.IDLE
+                                }
                             }
-                            val rms = sqrt(sum / sampleCount).toFloat()
-                            _micAmplitude.value = (rms / 10000f).coerceIn(0f, 1f)
+                        }
+                        "sentence_start" -> {
+                            val text = json.optString("text")
+                            if (text.isNotEmpty()) display.setChatMessage("assistant", text)
                         }
                     }
-                    encoder?.encode(pcm ?: return@map null)
-                }
-
-                deviceState = DeviceState.LISTENING
-                opusFlow?.collect { it?.let { protocol.sendAudio(it) } }
-
-                // Quando il recorder si ferma, azzera l'ampiezza
-                _micAmplitude.value = 0f
-            }
-
-            launch {
-                protocol.incomingJsonFlow.collect { json ->
-                    val type = json.optString("type")
-                    when (type) {
-                        "tts" -> {
-                            when (json.optString("state")) {
-                                "start" -> schedule {
-                                    aborted = false
-                                    if (deviceState == DeviceState.IDLE || deviceState == DeviceState.LISTENING) {
-                                        deviceState = DeviceState.SPEAKING
-                                    }
-                                }
-                                "stop" -> schedule {
-                                    if (deviceState == DeviceState.SPEAKING) {
-                                        player?.waitForPlaybackCompletion()
-                                        if (keepListening) {
-                                            protocol.sendStartListening(ListeningMode.AUTO_STOP)
-                                            deviceState = DeviceState.LISTENING
-                                        } else {
-                                            deviceState = DeviceState.IDLE
-                                        }
-                                    }
-                                }
-                                "sentence_start" -> {
-                                    val text = json.optString("text")
-                                    if (text.isNotEmpty()) schedule { display.setChatMessage("assistant", text) }
-                                }
-                            }
-                        }
-                        "stt" -> {
-                            val text = json.optString("text")
-                            if (text.isNotEmpty()) schedule { display.setChatMessage("user", text) }
-                        }
-                        "llm" -> {
-                            val emotion = json.optString("emotion")
-                            if (emotion.isNotEmpty()) schedule { display.setEmotion(emotion) }
-                        }
+                    "stt" -> {
+                        val text = json.optString("text")
+                        if (text.isNotEmpty()) display.setChatMessage("user", text)
+                    }
+                    "llm" -> {
+                        val emotion = json.optString("emotion")
+                        if (emotion.isNotEmpty()) display.setEmotion(emotion)
                     }
                 }
             }
         }
     }
 
-    fun toggleChatState() { /* your existing code */ }
-    fun startListening() { /* your existing code */ }
+    fun toggleChatState()               { /* your existing code */ }
+    fun startListening()                { /* your existing code */ }
     fun abortSpeaking(reason: AbortReason) { /* your existing code */ }
-    private fun schedule(task: suspend () -> Unit) { viewModelScope.launch { task() } }
-    fun stopListening() { /* your existing code */ }
+    fun stopListening()                 { /* your existing code */ }
 
     override fun onCleared() {
         protocol.dispose()
@@ -201,10 +194,10 @@ class ChatViewModel @Inject constructor(
 // ── Data classes ──────────────────────────────────────────────────────────────
 
 data class ChatUiState(
-    val messages: List<Message> = emptyList(),
-    val deviceState: DeviceState = DeviceState.IDLE,
-    val speakingAmplitude: Float = 0f,   // ampiezza audio in uscita (TTS)
-    val micAmplitude: Float = 0f         // ampiezza microfono in entrata
+    val messages:          List<Message> = emptyList(),
+    val deviceState:       DeviceState  = DeviceState.IDLE,
+    val speakingAmplitude: Float        = 0f,
+    val micAmplitude:      Float        = 0f
 )
 
 enum class DeviceState {
@@ -212,8 +205,8 @@ enum class DeviceState {
 }
 
 class Display {
-    val chatFlow = MutableStateFlow<List<Message>>(listOf())
-    val emotionFlow = MutableStateFlow<String>("neutral")
+    val chatFlow    = MutableStateFlow<List<Message>>(emptyList())
+    val emotionFlow = MutableStateFlow("neutral")
     fun setChatMessage(sender: String, message: String) {
         chatFlow.value = chatFlow.value + Message(sender, message)
     }
@@ -223,10 +216,10 @@ class Display {
 val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
 data class Message(
-    val sender: String = "",
-    val message: String = "",
+    val sender:      String = "",
+    val message:     String = "",
     val nowInString: String = df.format(System.currentTimeMillis())
 ) {
-    val isUser: Boolean get() = sender == "user"
-    val content: String get() = message
+    val isUser:  Boolean get() = sender == "user"
+    val content: String  get() = message
 }
