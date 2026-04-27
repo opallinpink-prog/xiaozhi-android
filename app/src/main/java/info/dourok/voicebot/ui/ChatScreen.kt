@@ -91,7 +91,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
 // ---------------------------------------------------------------------------
 
 @Composable
-fun DynamicVisualizer(deviceState: DeviceState, speakingAmplitude: Float = 0f, micAmplitude: Float = 0f) {
+fun DynamicVisualizer(
+    deviceState:       DeviceState,
+    speakingAmplitude: Float = 0f,
+    micAmplitude:      Float = 0f
+) {
     when (deviceState) {
         DeviceState.LISTENING -> ListeningVisualizer(micAmplitude)
         DeviceState.SPEAKING  -> SpeakingVisualizer(speakingAmplitude)
@@ -100,65 +104,23 @@ fun DynamicVisualizer(deviceState: DeviceState, speakingAmplitude: Float = 0f, m
 }
 
 // ---------------------------------------------------------------------------
-// Glow helpers — multi-layer radial alpha, zero allocazioni per frame
-// ---------------------------------------------------------------------------
-
-/**
- * Glow cerchio: disegna N anelli concentrici con alpha che decade esponenzialmente.
- * Nessun setShadowLayer, nessun Paint allocato per frame → veloce e visivamente morbido.
- */
-private fun DrawScope.glowCircle(color: Color, center: Offset, radius: Float, layers: Int = 6) {
-    for (i in layers downTo 1) {
-        val fraction = i.toFloat() / layers           // 1.0 → 0.17
-        val scale    = 1f + (1f - fraction) * 1.4f   // raggio da 1x a 2.4x
-        val alpha    = fraction * fraction * 0.35f    // caduta quadratica
-        drawCircle(color.copy(alpha = alpha), radius * scale, center)
-    }
-    drawCircle(color, radius, center) // core solido
-}
-
-/**
- * Glow barra: disegna N rettangoli arrotondati concentrici con alpha decrescente.
- */
-private fun DrawScope.glowBar(
-    color:  Color,
-    x:      Float,
-    centerY: Float,
-    w:      Float,
-    h:      Float,
-    layers: Int = 5
-) {
-    val cr = CornerRadius(3f)
-    for (i in layers downTo 1) {
-        val fraction = i.toFloat() / layers
-        val expand   = (1f - fraction) * w * 1.2f
-        val alpha    = fraction * fraction * 0.30f
-        drawRoundRect(
-            color        = color.copy(alpha = alpha),
-            topLeft      = Offset(x - expand / 2f, centerY - (h + expand) / 2f),
-            size         = Size(w + expand, h + expand),
-            cornerRadius = cr
-        )
-    }
-    drawRoundRect(color = color, topLeft = Offset(x, centerY - h / 2f), size = Size(w, h), cornerRadius = cr)
-}
-
-// ---------------------------------------------------------------------------
-// 1. STANDBY — aurora HSV sweep
+// 1. STANDBY — linea arcobaleno HSV pura, niente blur
 // ---------------------------------------------------------------------------
 
 @Composable
 fun StandbyVisualizer() {
     val tr = rememberInfiniteTransition(label = "aurora")
     val hue by tr.animateFloat(
-        initialValue  = 0f, targetValue = 360f,
+        initialValue  = 0f,
+        targetValue   = 360f,
         animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart),
-        label = "hue"
+        label         = "hue"
     )
     val pulse by tr.animateFloat(
-        initialValue  = 0.7f, targetValue = 1.0f,
+        initialValue  = 0.7f,
+        targetValue   = 1.0f,
         animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
+        label         = "pulse"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
@@ -167,60 +129,82 @@ fun StandbyVisualizer() {
         val trackW = size.width * 0.88f
         val startX = (size.width - trackW) / 2f
         val N      = 48
-        val colors = List(N + 1) { i -> Color.hsv(((hue + 360f / N * i) % 360f), 0.9f, 1f) }
+        val colors = List(N + 1) { i -> Color.hsv(((hue + 360f / N * i) % 360f), 1f, 1f) }
 
-        // Alone largo
-        drawRect(
-            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.08f) }, startX, startX + trackW),
-            topLeft = Offset(startX, cy - lineH * 6f), size = Size(trackW, lineH * 12f)
-        )
-        // Alone medio
-        drawRect(
-            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.22f) }, startX, startX + trackW),
-            topLeft = Offset(startX, cy - lineH * 2.5f), size = Size(trackW, lineH * 5f)
-        )
-        // Linea solida
         drawRect(
             brush   = Brush.horizontalGradient(colors, startX, startX + trackW),
-            topLeft = Offset(startX, cy - lineH / 2f), size = Size(trackW, lineH)
+            topLeft = Offset(startX, cy - lineH / 2f),
+            size    = Size(trackW, lineH)
         )
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. LISTENING — cerchio rosso con glow morbido reattivo al mic
+// 2. LISTENING — tre pallini che pulsano in sequenza (• • •)
 // ---------------------------------------------------------------------------
 
 @Composable
 fun ListeningVisualizer(micAmplitude: Float) {
+    // Smooth dell'ampiezza mic per espandere leggermente i dot quando parli
     var smoothed by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) { while (true) { smoothed += (micAmplitude - smoothed) * 0.2f; delay(16) } }
+    LaunchedEffect(Unit) {
+        while (true) { smoothed += (micAmplitude - smoothed) * 0.25f; delay(16) }
+    }
 
-    val tr = rememberInfiniteTransition(label = "listen")
-    val basePulse by tr.animateFloat(
-        initialValue  = 0.88f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "pulse"
+    // Tre animazioni sfasate di 200ms l'una → effetto "..." sequenziale
+    val tr = rememberInfiniteTransition(label = "dots")
+    val dot0 by tr.animateFloat(
+        initialValue  = 0.3f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            tween(600, delayMillis =   0, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ), label = "d0"
+    )
+    val dot1 by tr.animateFloat(
+        initialValue  = 0.3f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            tween(600, delayMillis = 200, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ), label = "d1"
+    )
+    val dot2 by tr.animateFloat(
+        initialValue  = 0.3f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            tween(600, delayMillis = 400, easing = FastOutSlowInEasing), RepeatMode.Reverse
+        ), label = "d2"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val cx     = size.width  / 2f
-        val cy     = size.height / 2f
-        val radius = minOf(size.width, size.height) * 0.14f * (basePulse + smoothed * 0.6f)
-        glowCircle(Color(0xFFFF1744), Offset(cx, cy), radius, layers = 7)
-        // Highlight speculare
-        drawCircle(Color.White.copy(alpha = 0.22f), radius * 0.35f, Offset(cx - radius * 0.2f, cy - radius * 0.2f))
+        val cx        = size.width  / 2f
+        val cy        = size.height / 2f
+        val baseR     = 18.dp.toPx()
+        val micBoost  = smoothed * 0.5f          // il mic espande leggermente i dot
+        val spacing   = 60.dp.toPx()
+        val scales    = listOf(dot0, dot1, dot2)
+        val offsets   = listOf(-spacing, 0f, spacing)
+
+        offsets.forEachIndexed { i, dx ->
+            val r     = baseR * (scales[i] + micBoost)
+            val alpha = 0.5f + scales[i] * 0.5f  // varia da 0.5 a 1.0
+            drawCircle(
+                color  = Color(0xFFFF1744).copy(alpha = alpha),
+                radius = r,
+                center = Offset(cx + dx, cy)
+            )
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3. SPEAKING — barre ciano stile KITT con glow morbido
+// 3. SPEAKING — 3 colonne LED stile KITT/equalizzatore vintage
+//    Ogni colonna è fatta di N segmenti separati da gap, con gradiente
+//    dal basso (rosso scuro) all'alto (ciano brillante).
+//    L'altezza di ogni colonna varia con l'audio + scanner KITT.
 // ---------------------------------------------------------------------------
 
 @Composable
 fun SpeakingVisualizer(externalAmplitude: Float) {
     var smoothedAmp by remember { mutableFloatStateOf(0f) }
     var timeMs      by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
     LaunchedEffect(Unit) {
         while (true) {
             timeMs      = System.currentTimeMillis()
@@ -228,36 +212,83 @@ fun SpeakingVisualizer(externalAmplitude: Float) {
             delay(16)
         }
     }
-    Canvas(modifier = Modifier.fillMaxSize()) { drawKittBars(timeMs, smoothedAmp) }
+
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        drawLedColumns(timeMs, smoothedAmp)
+    }
 }
 
-private fun DrawScope.drawKittBars(timeMs: Long, smoothedAmp: Float) {
-    val t        = timeMs / 1000f
-    val barCount = 20
-    val totalPad = size.width * 0.06f
-    val gap      = totalPad / (barCount - 1).coerceAtLeast(1)
-    val barW     = (size.width - totalPad) / barCount - gap
-    val centerY  = size.height / 2f
-    val maxH     = size.height * 0.44f
+// Gradiente colori segmenti: dal basso (scuro) verso l'alto (brillante), come KITT
+private val LED_COLORS = listOf(
+    Color(0xFF003333),   // buio in fondo
+    Color(0xFF006666),
+    Color(0xFF009999),
+    Color(0xFF00CCCC),
+    Color(0xFF00FFFF),   // ciano brillante in cima
+    Color(0xFFCCFFFF)    // quasi bianco sulle punte
+)
 
-    // Energia globale: reale se arriva, procedurale come fallback
+private fun DrawScope.drawLedColumns(timeMs: Long, smoothedAmp: Float) {
+    val t           = timeMs / 1000f
+    val columnCount = 3
+    val segmentRows = 24                        // quanti LED per colonna (altezza max)
+    val colW        = size.width * 0.18f        // larghezza di ogni colonna
+    val totalColW   = colW * columnCount
+    val colSpacing  = (size.width - totalColW) / (columnCount + 1)
+    val maxH        = size.height * 0.80f       // altezza totale della griglia LED
+    val segH        = maxH / segmentRows
+    val segGap      = segH * 0.15f             // gap tra segmenti
+    val segNet      = segH - segGap            // altezza netta del singolo LED
+    val topY        = (size.height - maxH) / 2f
+    val cr          = CornerRadius(2f)
+
+    // Energia globale
     val energy = if (smoothedAmp > 0.01f) smoothedAmp.coerceIn(0.1f, 1f)
-    else (0.40f + 0.28f * sin(t * 2.1f) + 0.16f * sin(t * 5.3f + 1.1f) + 0.16f * sin(t * 0.7f + 2.4f))
-            .toFloat().coerceIn(0.15f, 1f)
+    else (0.40f + 0.28f * sin(t * 2.1f) + 0.16f * sin(t * 5.3f + 1.1f) +
+          0.16f * sin(t * 0.7f + 2.4f)).toFloat().coerceIn(0.15f, 1f)
 
-    val scanPos = (sin(t * 1.5f) + 1.0) / 2.0  // 0..1, rimbalza L↔R
+    for (col in 0 until columnCount) {
+        val colX = colSpacing + col * (colW + colSpacing)
 
-    for (i in 0 until barCount) {
-        val x      = totalPad / 2f + i * (barW + gap)
-        val barPos = i.toDouble() / (barCount - 1)
-        val scan   = exp(-(barPos - scanPos).pow(2.0) * 16.0).toFloat()
-        val noise  = 0.5f + 0.3f * sin(t * (3f + i * 0.4f)) + 0.2f * sin(t * (7.1f + i * 0.2f) + i * 0.5f)
-        val hf     = ((noise * 0.5f + scan * 0.5f) * energy).coerceIn(0f, 1f)
-        val h      = (maxH * hf).coerceAtLeast(3.dp.toPx())
-        val color  = lerpColor(Color(0xFF00BCD4), Color(0xFFCCFFFE), hf)
+        // Ogni colonna ha una fase leggermente diversa → effetto tridimensionale
+        val phase  = col * (PI / 3.0).toFloat()
+        val noise  = 0.5f + 0.3f * sin(t * 2.5f + phase) + 0.2f * sin(t * 6.1f + phase * 2f)
+        val colH   = (segmentRows * noise.coerceIn(0.15f, 1f) * energy).toInt()
+                        .coerceIn(1, segmentRows)
 
-        glowBar(color, x, centerY, barW, h, layers = 5)
+        for (row in 0 until segmentRows) {
+            // row 0 = in basso, row (segmentRows-1) = in alto
+            val segY = topY + (segmentRows - 1 - row) * segH + segGap / 2f
+
+            val lit = row < colH   // questo LED è acceso?
+
+            // Colore: interpolato dal gradiente in base alla posizione verticale
+            val colorFraction = row.toFloat() / (segmentRows - 1)  // 0=basso, 1=alto
+            val segColor = if (lit) {
+                lerpColorList(LED_COLORS, colorFraction)
+            } else {
+                // LED spento: colore molto scuro (0.06 alpha del colore pieno)
+                lerpColorList(LED_COLORS, colorFraction).copy(alpha = 0.06f)
+            }
+
+            drawRoundRect(
+                color        = segColor,
+                topLeft      = Offset(colX, segY),
+                size         = Size(colW, segNet),
+                cornerRadius = cr
+            )
+        }
     }
+}
+
+// Interpola un colore da una lista di colori (come una colormap)
+private fun lerpColorList(colors: List<Color>, t: Float): Color {
+    if (t <= 0f) return colors.first()
+    if (t >= 1f) return colors.last()
+    val scaled = t * (colors.size - 1)
+    val idx    = scaled.toInt().coerceIn(0, colors.size - 2)
+    val frac   = scaled - idx
+    return lerpColor(colors[idx], colors[idx + 1], frac)
 }
 
 private fun lerpColor(a: Color, b: Color, t: Float) = Color(
