@@ -172,11 +172,14 @@ fun ListeningVisualizer(micAmplitude: Float) {
         ), label = "d2"
     )
 
+    // Leggi smoothed QUI fuori per triggerare recompose
+    val micBoostVal = smoothed
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         val cx        = size.width  / 2f
         val cy        = size.height / 2f
         val baseR     = 18.dp.toPx()
-        val micBoost  = smoothed * 0.5f          // il mic espande leggermente i dot
+        val micBoost  = micBoostVal * 0.5f
         val spacing   = 60.dp.toPx()
         val scales    = listOf(dot0, dot1, dot2)
         val offsets   = listOf(-spacing, 0f, spacing)
@@ -213,8 +216,12 @@ fun SpeakingVisualizer(externalAmplitude: Float) {
         }
     }
 
+    // Leggere le State QUI fuori dal lambda e' cio' che triggera il recompose del Canvas
+    val t   = timeMs
+    val amp = smoothedAmp
+
     Canvas(modifier = Modifier.fillMaxSize()) {
-        drawLedColumns(timeMs, smoothedAmp)
+        drawLedColumns(t, amp)
     }
 }
 
