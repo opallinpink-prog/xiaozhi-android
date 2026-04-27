@@ -17,9 +17,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlin.math.*
@@ -57,22 +62,20 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // ── Visualizer ──────────────────────────────────────────────────
             DynamicVisualizer(
-                deviceState      = uiState.deviceState,
+                deviceState       = uiState.deviceState,
                 speakingAmplitude = uiState.speakingAmplitude,
-                micAmplitude     = uiState.micAmplitude
+                micAmplitude      = uiState.micAmplitude
             )
 
-            // ── Chat overlay ────────────────────────────────────────────────
             AnimatedVisibility(
-                visible = showChatMessages,
+                visible  = showChatMessages,
                 modifier = Modifier.fillMaxSize()
             ) {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier       = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
-                    reverseLayout = true
+                    reverseLayout  = true
                 ) {
                     items(uiState.messages) { message ->
                         Box(
@@ -81,15 +84,15 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 .padding(vertical = 4.dp)
                         ) {
                             Surface(
-                                shape = MaterialTheme.shapes.medium,
-                                color = if (message.isUser) Color(0xFF1E88E5) else Color(0xFF424242),
+                                shape    = MaterialTheme.shapes.medium,
+                                color    = if (message.isUser) Color(0xFF1E88E5) else Color(0xFF424242),
                                 modifier = Modifier.align(
                                     if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
                                 )
                             ) {
                                 Text(
-                                    text = message.content as String,
-                                    color = Color.White,
+                                    text     = message.content as String,
+                                    color    = Color.White,
                                     modifier = Modifier.padding(12.dp)
                                 )
                             }
@@ -107,9 +110,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
 @Composable
 fun DynamicVisualizer(
-    deviceState: DeviceState,
+    deviceState:       DeviceState,
     speakingAmplitude: Float = 0f,
-    micAmplitude: Float = 0f
+    micAmplitude:      Float = 0f
 ) {
     when (deviceState) {
         DeviceState.LISTENING -> ListeningVisualizer(micAmplitude = micAmplitude)
@@ -119,7 +122,76 @@ fun DynamicVisualizer(
 }
 
 // ---------------------------------------------------------------------------
-// 1. STANDBY — aurora HSV sweep
+// Helpers — glow gaussiano via BlurMaskFilter
+// ---------------------------------------------------------------------------
+
+/** Disegna un rettangolo con glow gaussiano soft attorno. */
+private fun DrawScope.drawGlowRect(
+    color:    Color,
+    topLeft:  Offset,
+    size:     Size,
+    glowRadius: Dp,
+    glowAlpha:  Float = 0.55f,
+    cornerRadius: Float = 4f
+) {
+    drawIntoCanvas { canvas ->
+        val glowPaint = Paint().apply {
+            asFrameworkPaint().apply {
+                isAntiAlias = true
+                this.color  = android.graphics.Color.TRANSPARENT
+                setShadowLayer(
+                    glowRadius.toPx(),
+                    0f, 0f,
+                    color.copy(alpha = glowAlpha).toArgb()
+                )
+            }
+        }
+        val rect = android.graphics.RectF(
+            topLeft.x, topLeft.y,
+            topLeft.x + size.width, topLeft.y + size.height
+        )
+        canvas.drawIntoCanvas { c ->
+            c.nativeCanvas.drawRoundRect(rect, cornerRadius, cornerRadius, glowPaint.asFrameworkPaint())
+        }
+    }
+    // Rettangolo solido sopra
+    drawRoundRect(
+        color        = color,
+        topLeft      = topLeft,
+        size         = size,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius)
+    )
+}
+
+/** Disegna un cerchio con glow gaussiano soft. */
+private fun DrawScope.drawGlowCircle(
+    color:      Color,
+    center:     Offset,
+    radius:     Float,
+    glowRadius: Dp,
+    glowAlpha:  Float = 0.5f
+) {
+    drawIntoCanvas { canvas ->
+        val glowPaint = Paint().apply {
+            asFrameworkPaint().apply {
+                isAntiAlias = true
+                this.color  = android.graphics.Color.TRANSPARENT
+                setShadowLayer(
+                    glowRadius.toPx(),
+                    0f, 0f,
+                    color.copy(alpha = glowAlpha).toArgb()
+                )
+            }
+        }
+        canvas.drawIntoCanvas { c ->
+            c.nativeCanvas.drawCircle(center.x, center.y, radius, glowPaint.asFrameworkPaint())
+        }
+    }
+    drawCircle(color = color, radius = radius, center = center)
+}
+
+// ---------------------------------------------------------------------------
+// 1. STANDBY — aurora HSV sweep con glow
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -127,167 +199,204 @@ fun StandbyVisualizer() {
     val infiniteTransition = rememberInfiniteTransition(label = "aurora")
     val hueOffset by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 360f,
+        targetValue  = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
+            animation  = tween(4000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "hue"
     )
     val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1.0f,
+        initialValue = 0.7f,
+        targetValue  = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation  = tween(1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val centerY = size.height / 2f
-        val lineHeight = 6.dp.toPx() * pulse
-        val trackWidth = size.width * 0.82f
-        val startX = (size.width - trackWidth) / 2f
-        val steps = 32
+        val centerY    = size.height / 2f
+        val lineH      = 5.dp.toPx() * pulse
+        val trackWidth = size.width * 0.88f
+        val startX     = (size.width - trackWidth) / 2f
+        val steps      = 48
+
         val colors = List(steps + 1) { i ->
-            Color.hsv(((hueOffset + (360f / steps) * i) % 360f), 0.85f, 1f)
+            Color.hsv(((hueOffset + (360f / steps) * i) % 360f), 0.9f, 1f)
         }
-        val brush = Brush.horizontalGradient(colors, startX, startX + trackWidth)
-        drawRect(brush, Offset(startX, centerY - lineHeight / 2f), Size(trackWidth, lineHeight))
-        val glowBrush = Brush.horizontalGradient(
-            colors.map { it.copy(alpha = 0.18f) }, startX, startX + trackWidth
+
+        // Glow largo e sfumato (alpha basso, altezza grande)
+        val glowH = lineH * 10f * pulse
+        drawRect(
+            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.10f) }, startX, startX + trackWidth),
+            topLeft = Offset(startX, centerY - glowH / 2f),
+            size    = Size(trackWidth, glowH)
         )
-        drawRect(glowBrush, Offset(startX, centerY - lineHeight * 3f), Size(trackWidth, lineHeight * 6f))
+        // Glow medio
+        val midH = lineH * 4f
+        drawRect(
+            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.30f) }, startX, startX + trackWidth),
+            topLeft = Offset(startX, centerY - midH / 2f),
+            size    = Size(trackWidth, midH)
+        )
+        // Linea solida
+        drawRect(
+            brush   = Brush.horizontalGradient(colors, startX, startX + trackWidth),
+            topLeft = Offset(startX, centerY - lineH / 2f),
+            size    = Size(trackWidth, lineH)
+        )
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. LISTENING — cerchio rosso che reagisce al mic
-//    L'ampiezza arriva dal ViewModel (no secondo AudioRecord!)
+// 2. LISTENING — cerchio rosso con glow gaussiano
 // ---------------------------------------------------------------------------
 
 @Composable
 fun ListeningVisualizer(micAmplitude: Float) {
-    // Smooth del valore in entrata per evitare jitter
     var smoothed by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
         while (true) {
-            smoothed = smoothed + (micAmplitude - smoothed) * 0.25f
+            smoothed = smoothed + (micAmplitude - smoothed) * 0.2f
             delay(16L)
         }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "listen")
     val basePulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.0f,
+        initialValue = 0.88f,
+        targetValue  = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
+            animation  = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "basePulse"
     )
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val baseRadius = minOf(size.width, size.height) * 0.13f
-        val radius = baseRadius * (basePulse + smoothed * 0.55f)
+        val cx         = size.width  / 2f
+        val cy         = size.height / 2f
+        val baseRadius = minOf(size.width, size.height) * 0.14f
+        val expand     = smoothed * 0.6f
+        val radius     = baseRadius * (basePulse + expand)
+        val center     = Offset(cx, cy)
 
-        drawCircle(
-            color = Color.Red.copy(alpha = 0.15f + smoothed * 0.25f),
-            radius = radius * 1.55f,
-            center = Offset(cx, cy)
+        // Glow esterno largo
+        drawGlowCircle(
+            color      = Color(0xFFFF1744).copy(alpha = 0.18f + smoothed * 0.2f),
+            center     = center,
+            radius     = radius * 1.6f,
+            glowRadius = 32.dp,
+            glowAlpha  = 0.25f
         )
-        drawCircle(
-            color = Color.Red.copy(alpha = 0.3f + smoothed * 0.2f),
-            radius = radius * 1.2f,
-            center = Offset(cx, cy)
+        // Glow medio
+        drawGlowCircle(
+            color      = Color(0xFFFF1744).copy(alpha = 0.45f + smoothed * 0.2f),
+            center     = center,
+            radius     = radius * 1.15f,
+            glowRadius = 18.dp,
+            glowAlpha  = 0.5f
         )
-        drawCircle(
-            color = Color(0xFFFF1744),
-            radius = radius,
-            center = Offset(cx, cy)
+        // Core solido con glow stretto e intenso
+        drawGlowCircle(
+            color      = Color(0xFFFF1744),
+            center     = center,
+            radius     = radius,
+            glowRadius = 10.dp,
+            glowAlpha  = 0.9f
         )
+        // Highlight bianco
         drawCircle(
-            color = Color.White.copy(alpha = 0.25f),
-            radius = radius * 0.38f,
-            center = Offset(cx - radius * 0.22f, cy - radius * 0.22f)
+            color  = Color.White.copy(alpha = 0.28f),
+            radius = radius * 0.36f,
+            center = Offset(cx - radius * 0.2f, cy - radius * 0.2f)
         )
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3. SPEAKING — barre ciano stile KITT
+// 3. SPEAKING — barre ciano stile KITT con glow gaussiano
 // ---------------------------------------------------------------------------
 
 @Composable
 fun SpeakingVisualizer(externalAmplitude: Float) {
-    val barCount = 20
-    var timeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Smooth dell'ampiezza in entrata
+    var smoothedAmp by remember { mutableFloatStateOf(0f) }
+    var timeMs      by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
     LaunchedEffect(Unit) {
         while (true) {
-            timeMs = System.currentTimeMillis()
+            timeMs     = System.currentTimeMillis()
+            smoothedAmp = smoothedAmp + (externalAmplitude - smoothedAmp) * 0.18f
             delay(16L)
         }
     }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        drawKittBars(barCount, timeMs, externalAmplitude)
+        drawKittBars(timeMs, smoothedAmp)
     }
 }
 
-private fun DrawScope.drawKittBars(barCount: Int, timeMs: Long, externalAmplitude: Float) {
-    val t = timeMs / 1000f
-    val totalSpacing = size.width * 0.06f
-    val totalBarWidth = size.width - totalSpacing
-    val gap = totalSpacing / (barCount - 1).coerceAtLeast(1)
-    val barW = (totalBarWidth / barCount) - gap
-    val centerY = size.height / 2f
-    val maxH = size.height * 0.42f
+private fun DrawScope.drawKittBars(timeMs: Long, smoothedAmp: Float) {
+    val t        = timeMs / 1000f
+    val barCount = 20
 
-    val globalEnergy: Float = if (externalAmplitude > 0f) {
-        externalAmplitude.coerceIn(0f, 1f)
+    val totalPad   = size.width * 0.06f
+    val gap        = totalPad / (barCount - 1).coerceAtLeast(1)
+    val barW       = (size.width - totalPad) / barCount - gap
+    val centerY    = size.height / 2f
+    val maxH       = size.height * 0.44f
+
+    // Energia globale: usa ampiezza reale se disponibile, altrimenti procedurale
+    val globalEnergy: Float = if (smoothedAmp > 0.01f) {
+        smoothedAmp.coerceIn(0.1f, 1f)
     } else {
-        // Fallback procedurale quando l'ampiezza reale è 0
-        val e = 0.45f +
-                0.25f * sin(t * 2.1f).toFloat() +
-                0.15f * sin(t * 5.3f + 1.1f).toFloat() +
-                0.15f * sin(t * 0.7f + 2.4f).toFloat()
-        e.coerceIn(0.1f, 1f)
+        val e = 0.40f +
+                0.28f * sin(t * 2.1f).toFloat() +
+                0.16f * sin(t * 5.3f + 1.1f).toFloat() +
+                0.16f * sin(t * 0.7f + 2.4f).toFloat()
+        e.coerceIn(0.15f, 1f)
     }
 
-    val scanPos = (sin(t * 1.4f).toDouble() + 1.0) / 2.0
+    // Scanner KITT: picco gaussiano che rimbalza L↔R
+    val scanPos = (sin(t * 1.5f).toDouble() + 1.0) / 2.0
 
     for (i in 0 until barCount) {
-        val x = i * (barW + gap) + totalSpacing / 2f
+        val x      = totalPad / 2f + i * (barW + gap)
         val barPos = i.toDouble() / (barCount - 1)
-        val dist = abs(barPos - scanPos).toFloat()
-        val scanBoost = exp(-dist * dist * 18f)
-        val noise = 0.5f +
-                0.3f * sin(t * (3.1f + i * 0.37f)).toFloat() +
-                0.2f * sin(t * (7.3f + i * 0.19f) + i).toFloat()
-        val heightFactor = (noise * 0.55f + scanBoost * 0.45f) * globalEnergy
-        val h = (maxH * heightFactor).coerceAtLeast(4.dp.toPx())
-        val brightness = heightFactor.coerceIn(0f, 1f)
-        val barColor = lerpColor(Color(0xFF00BCD4), Color(0xFFE0FFFF), brightness)
+        val dist   = abs(barPos - scanPos).toFloat()
+        val scan   = exp(-dist * dist * 16f)  // Gaussiana
 
-        drawRect(
-            color = barColor.copy(alpha = 0.18f),
-            topLeft = Offset(x - barW * 0.4f, centerY - h * 0.6f),
-            size = Size(barW * 1.8f, h * 1.2f)
-        )
-        drawRect(
-            color = barColor,
-            topLeft = Offset(x, centerY - h / 2f),
-            size = Size(barW, h)
+        // Rumore per-barra con frequenze diverse → movimento organico
+        val noise = 0.5f +
+                0.3f  * sin(t * (3.0f  + i * 0.4f)).toFloat() +
+                0.2f  * sin(t * (7.1f  + i * 0.2f) + i * 0.5f).toFloat()
+
+        val hf     = (noise * 0.5f + scan * 0.5f) * globalEnergy
+        val h      = (maxH * hf).coerceAtLeast(3.dp.toPx())
+        val bright = hf.coerceIn(0f, 1f)
+
+        // Colore: ciano freddo → quasi bianco sulle punte energiche
+        val barColor = lerpColor(Color(0xFF00BCD4), Color(0xFFCCFFFE), bright)
+
+        val rect = Offset(x, centerY - h / 2f) to Size(barW, h)
+
+        // Glow gaussiano per ogni barra (intensità proporzionale all'altezza)
+        drawGlowRect(
+            color        = barColor,
+            topLeft      = rect.first,
+            size         = rect.second,
+            glowRadius   = (6f + bright * 14f).dp,
+            glowAlpha    = 0.5f + bright * 0.35f,
+            cornerRadius = 3f
         )
     }
 }
 
 // ---------------------------------------------------------------------------
-// Helper
+// Helper colore
 // ---------------------------------------------------------------------------
 
 private fun lerpColor(a: Color, b: Color, t: Float) = Color(
