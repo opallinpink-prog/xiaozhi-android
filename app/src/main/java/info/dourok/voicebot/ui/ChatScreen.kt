@@ -15,9 +15,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
@@ -122,48 +122,49 @@ fun DynamicVisualizer(
 }
 
 // ---------------------------------------------------------------------------
-// Helpers — glow gaussiano via BlurMaskFilter
+// Glow helpers — usano setShadowLayer sul nativeCanvas di Android
 // ---------------------------------------------------------------------------
 
-/** Disegna un rettangolo con glow gaussiano soft attorno. */
+/**
+ * Disegna un rettangolo arrotondato con glow gaussiano morbido.
+ * setShadowLayer è l'unico modo affidabile per avere blur reale in Compose Canvas.
+ */
 private fun DrawScope.drawGlowRect(
-    color:    Color,
-    topLeft:  Offset,
-    size:     Size,
-    glowRadius: Dp,
-    glowAlpha:  Float = 0.55f,
+    color:        Color,
+    topLeft:      Offset,
+    rectSize:     Size,
+    glowRadius:   Dp,
+    glowAlpha:    Float = 0.55f,
     cornerRadius: Float = 4f
 ) {
+    val glowColor = color.copy(alpha = glowAlpha).toArgb()
+    val solidColor = color.toArgb()
+    val cr = cornerRadius
+    val l = topLeft.x;  val t = topLeft.y
+    val r = l + rectSize.width;  val b = t + rectSize.height
+    val blurPx = glowRadius.toPx()
+
     drawIntoCanvas { canvas ->
-        val glowPaint = Paint().apply {
-            asFrameworkPaint().apply {
-                isAntiAlias = true
-                this.color  = android.graphics.Color.TRANSPARENT
-                setShadowLayer(
-                    glowRadius.toPx(),
-                    0f, 0f,
-                    color.copy(alpha = glowAlpha).toArgb()
-                )
-            }
+        // Paint glow (trasparente con shadow)
+        val glowPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.color  = android.graphics.Color.TRANSPARENT
+            setShadowLayer(blurPx, 0f, 0f, glowColor)
         }
-        val rect = android.graphics.RectF(
-            topLeft.x, topLeft.y,
-            topLeft.x + size.width, topLeft.y + size.height
-        )
-        canvas.drawIntoCanvas { c ->
-            c.nativeCanvas.drawRoundRect(rect, cornerRadius, cornerRadius, glowPaint.asFrameworkPaint())
+        // Paint solido (nessuna shadow)
+        val solidPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.color  = solidColor
         }
+        val rect = android.graphics.RectF(l, t, r, b)
+        canvas.nativeCanvas.drawRoundRect(rect, cr, cr, glowPaint)
+        canvas.nativeCanvas.drawRoundRect(rect, cr, cr, solidPaint)
     }
-    // Rettangolo solido sopra
-    drawRoundRect(
-        color        = color,
-        topLeft      = topLeft,
-        size         = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius)
-    )
 }
 
-/** Disegna un cerchio con glow gaussiano soft. */
+/**
+ * Disegna un cerchio con glow gaussiano morbido.
+ */
 private fun DrawScope.drawGlowCircle(
     color:      Color,
     center:     Offset,
@@ -171,35 +172,35 @@ private fun DrawScope.drawGlowCircle(
     glowRadius: Dp,
     glowAlpha:  Float = 0.5f
 ) {
+    val glowColor  = color.copy(alpha = glowAlpha).toArgb()
+    val solidColor = color.toArgb()
+    val blurPx     = glowRadius.toPx()
+
     drawIntoCanvas { canvas ->
-        val glowPaint = Paint().apply {
-            asFrameworkPaint().apply {
-                isAntiAlias = true
-                this.color  = android.graphics.Color.TRANSPARENT
-                setShadowLayer(
-                    glowRadius.toPx(),
-                    0f, 0f,
-                    color.copy(alpha = glowAlpha).toArgb()
-                )
-            }
+        val glowPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.color  = android.graphics.Color.TRANSPARENT
+            setShadowLayer(blurPx, 0f, 0f, glowColor)
         }
-        canvas.drawIntoCanvas { c ->
-            c.nativeCanvas.drawCircle(center.x, center.y, radius, glowPaint.asFrameworkPaint())
+        val solidPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.color  = solidColor
         }
+        canvas.nativeCanvas.drawCircle(center.x, center.y, radius, glowPaint)
+        canvas.nativeCanvas.drawCircle(center.x, center.y, radius, solidPaint)
     }
-    drawCircle(color = color, radius = radius, center = center)
 }
 
 // ---------------------------------------------------------------------------
-// 1. STANDBY — aurora HSV sweep con glow
+// 1. STANDBY — aurora HSV sweep con glow sfumato
 // ---------------------------------------------------------------------------
 
 @Composable
 fun StandbyVisualizer() {
     val infiniteTransition = rememberInfiniteTransition(label = "aurora")
     val hueOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue  = 360f,
+        initialValue  = 0f,
+        targetValue   = 360f,
         animationSpec = infiniteRepeatable(
             animation  = tween(4000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
@@ -207,8 +208,8 @@ fun StandbyVisualizer() {
         label = "hue"
     )
     val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.7f,
-        targetValue  = 1.0f,
+        initialValue  = 0.7f,
+        targetValue   = 1.0f,
         animationSpec = infiniteRepeatable(
             animation  = tween(1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -227,19 +228,17 @@ fun StandbyVisualizer() {
             Color.hsv(((hueOffset + (360f / steps) * i) % 360f), 0.9f, 1f)
         }
 
-        // Glow largo e sfumato (alpha basso, altezza grande)
-        val glowH = lineH * 10f * pulse
+        // Glow largo (bassa opacità, altezza ampia)
         drawRect(
             brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.10f) }, startX, startX + trackWidth),
-            topLeft = Offset(startX, centerY - glowH / 2f),
-            size    = Size(trackWidth, glowH)
+            topLeft = Offset(startX, centerY - lineH * 5f),
+            size    = Size(trackWidth, lineH * 10f)
         )
         // Glow medio
-        val midH = lineH * 4f
         drawRect(
-            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.30f) }, startX, startX + trackWidth),
-            topLeft = Offset(startX, centerY - midH / 2f),
-            size    = Size(trackWidth, midH)
+            brush   = Brush.horizontalGradient(colors.map { it.copy(alpha = 0.28f) }, startX, startX + trackWidth),
+            topLeft = Offset(startX, centerY - lineH * 2.5f),
+            size    = Size(trackWidth, lineH * 5f)
         )
         // Linea solida
         drawRect(
@@ -251,7 +250,7 @@ fun StandbyVisualizer() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. LISTENING — cerchio rosso con glow gaussiano
+// 2. LISTENING — cerchio rosso con glow gaussiano reale
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -266,8 +265,8 @@ fun ListeningVisualizer(micAmplitude: Float) {
 
     val infiniteTransition = rememberInfiniteTransition(label = "listen")
     val basePulse by infiniteTransition.animateFloat(
-        initialValue = 0.88f,
-        targetValue  = 1.0f,
+        initialValue  = 0.88f,
+        targetValue   = 1.0f,
         animationSpec = infiniteRepeatable(
             animation  = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -279,34 +278,15 @@ fun ListeningVisualizer(micAmplitude: Float) {
         val cx         = size.width  / 2f
         val cy         = size.height / 2f
         val baseRadius = minOf(size.width, size.height) * 0.14f
-        val expand     = smoothed * 0.6f
-        val radius     = baseRadius * (basePulse + expand)
+        val radius     = baseRadius * (basePulse + smoothed * 0.6f)
         val center     = Offset(cx, cy)
 
-        // Glow esterno largo
-        drawGlowCircle(
-            color      = Color(0xFFFF1744).copy(alpha = 0.18f + smoothed * 0.2f),
-            center     = center,
-            radius     = radius * 1.6f,
-            glowRadius = 32.dp,
-            glowAlpha  = 0.25f
-        )
+        // Glow esterno morbido
+        drawGlowCircle(Color(0xFFFF1744).copy(alpha = 0.2f + smoothed * 0.2f), center, radius * 1.6f, 36.dp, 0.3f)
         // Glow medio
-        drawGlowCircle(
-            color      = Color(0xFFFF1744).copy(alpha = 0.45f + smoothed * 0.2f),
-            center     = center,
-            radius     = radius * 1.15f,
-            glowRadius = 18.dp,
-            glowAlpha  = 0.5f
-        )
-        // Core solido con glow stretto e intenso
-        drawGlowCircle(
-            color      = Color(0xFFFF1744),
-            center     = center,
-            radius     = radius,
-            glowRadius = 10.dp,
-            glowAlpha  = 0.9f
-        )
+        drawGlowCircle(Color(0xFFFF1744).copy(alpha = 0.5f + smoothed * 0.2f), center, radius * 1.15f, 20.dp, 0.6f)
+        // Core con glow stretto e intenso
+        drawGlowCircle(Color(0xFFFF1744), center, radius, 12.dp, 0.95f)
         // Highlight bianco
         drawCircle(
             color  = Color.White.copy(alpha = 0.28f),
@@ -317,18 +297,17 @@ fun ListeningVisualizer(micAmplitude: Float) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. SPEAKING — barre ciano stile KITT con glow gaussiano
+// 3. SPEAKING — barre ciano stile KITT con glow gaussiano reale
 // ---------------------------------------------------------------------------
 
 @Composable
 fun SpeakingVisualizer(externalAmplitude: Float) {
-    // Smooth dell'ampiezza in entrata
     var smoothedAmp by remember { mutableFloatStateOf(0f) }
     var timeMs      by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) {
         while (true) {
-            timeMs     = System.currentTimeMillis()
+            timeMs      = System.currentTimeMillis()
             smoothedAmp = smoothedAmp + (externalAmplitude - smoothedAmp) * 0.18f
             delay(16L)
         }
@@ -342,54 +321,44 @@ fun SpeakingVisualizer(externalAmplitude: Float) {
 private fun DrawScope.drawKittBars(timeMs: Long, smoothedAmp: Float) {
     val t        = timeMs / 1000f
     val barCount = 20
+    val totalPad = size.width * 0.06f
+    val gap      = totalPad / (barCount - 1).coerceAtLeast(1)
+    val barW     = (size.width - totalPad) / barCount - gap
+    val centerY  = size.height / 2f
+    val maxH     = size.height * 0.44f
 
-    val totalPad   = size.width * 0.06f
-    val gap        = totalPad / (barCount - 1).coerceAtLeast(1)
-    val barW       = (size.width - totalPad) / barCount - gap
-    val centerY    = size.height / 2f
-    val maxH       = size.height * 0.44f
-
-    // Energia globale: usa ampiezza reale se disponibile, altrimenti procedurale
-    val globalEnergy: Float = if (smoothedAmp > 0.01f) {
+    // Energia globale: reale se disponibile, altrimenti procedurale
+    val globalEnergy = if (smoothedAmp > 0.01f) {
         smoothedAmp.coerceIn(0.1f, 1f)
     } else {
-        val e = 0.40f +
-                0.28f * sin(t * 2.1f).toFloat() +
-                0.16f * sin(t * 5.3f + 1.1f).toFloat() +
-                0.16f * sin(t * 0.7f + 2.4f).toFloat()
-        e.coerceIn(0.15f, 1f)
+        (0.40f +
+         0.28f * sin(t * 2.1f).toFloat() +
+         0.16f * sin(t * 5.3f + 1.1f).toFloat() +
+         0.16f * sin(t * 0.7f + 2.4f).toFloat()).coerceIn(0.15f, 1f)
     }
 
-    // Scanner KITT: picco gaussiano che rimbalza L↔R
+    // Picco gaussiano che scansiona L↔R (KITT)
     val scanPos = (sin(t * 1.5f).toDouble() + 1.0) / 2.0
 
     for (i in 0 until barCount) {
         val x      = totalPad / 2f + i * (barW + gap)
         val barPos = i.toDouble() / (barCount - 1)
-        val dist   = abs(barPos - scanPos).toFloat()
-        val scan   = exp(-dist * dist * 16f)  // Gaussiana
+        val scan   = exp(-((barPos - scanPos) * (barPos - scanPos) * 16.0)).toFloat()
+        val noise  = 0.5f +
+                     0.3f * sin(t * (3.0f + i * 0.4f)).toFloat() +
+                     0.2f * sin(t * (7.1f + i * 0.2f) + i * 0.5f).toFloat()
 
-        // Rumore per-barra con frequenze diverse → movimento organico
-        val noise = 0.5f +
-                0.3f  * sin(t * (3.0f  + i * 0.4f)).toFloat() +
-                0.2f  * sin(t * (7.1f  + i * 0.2f) + i * 0.5f).toFloat()
-
-        val hf     = (noise * 0.5f + scan * 0.5f) * globalEnergy
-        val h      = (maxH * hf).coerceAtLeast(3.dp.toPx())
-        val bright = hf.coerceIn(0f, 1f)
-
-        // Colore: ciano freddo → quasi bianco sulle punte energiche
+        val hf       = (noise * 0.5f + scan * 0.5f) * globalEnergy
+        val h        = (maxH * hf).coerceAtLeast(3.dp.toPx())
+        val bright   = hf.coerceIn(0f, 1f)
         val barColor = lerpColor(Color(0xFF00BCD4), Color(0xFFCCFFFE), bright)
 
-        val rect = Offset(x, centerY - h / 2f) to Size(barW, h)
-
-        // Glow gaussiano per ogni barra (intensità proporzionale all'altezza)
         drawGlowRect(
             color        = barColor,
-            topLeft      = rect.first,
-            size         = rect.second,
-            glowRadius   = (6f + bright * 14f).dp,
-            glowAlpha    = 0.5f + bright * 0.35f,
+            topLeft      = Offset(x, centerY - h / 2f),
+            rectSize     = Size(barW, h),
+            glowRadius   = (5f + bright * 14f).dp,
+            glowAlpha    = 0.45f + bright * 0.4f,
             cornerRadius = 3f
         )
     }
