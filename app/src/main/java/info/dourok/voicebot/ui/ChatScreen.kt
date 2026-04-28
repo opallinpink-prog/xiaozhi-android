@@ -214,8 +214,8 @@ private val LED_COLORS = listOf(
     Color(0xFFCCFFFF)
 )
 
-private fun DrawScope.drawLedColumns(timeMs: Long, smoothedAmp: Float) {
-    val t           = timeMs / 1000f
+private fun DrawScope.drawLedColumns(timeMs: Float, smoothedAmp: Float) {
+    val t           = timeMs  // già in secondi (0..4)
     val columnCount = 3
     val segmentRows = 24
     val colW        = size.width * 0.18f
