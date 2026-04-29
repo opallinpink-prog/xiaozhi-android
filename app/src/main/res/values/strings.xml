@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">voicebot-client-android</string>
+    <string name="app_name">CompanionAI</string>
     <string name="label_conn">Connect</string>
 </resources>
