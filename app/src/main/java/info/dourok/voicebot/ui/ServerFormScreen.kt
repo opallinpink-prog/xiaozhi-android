@@ -1,6 +1,5 @@
 package info.dourok.voicebot.ui
 
-import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,26 +15,20 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavController
-import info.dourok.voicebot.ui.FormViewModel
-
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import info.dourok.voicebot.R
 import info.dourok.voicebot.UiState
 import info.dourok.voicebot.data.model.SelfHostConfig
 import info.dourok.voicebot.data.model.ServerType
 import info.dourok.voicebot.data.model.TransportType
 import info.dourok.voicebot.data.model.XiaoZhiConfig
-import kotlinx.coroutines.flow.collect
 
-// :feature:form/ui/ServerFormScreen.kt
 @Composable
 fun ServerFormScreen(
     viewModel: FormViewModel = hiltViewModel()
@@ -55,7 +48,7 @@ fun ServerFormScreen(
             selectedType = formState.serverType,
             onTypeSelected = viewModel::updateServerType
         )
-        
+
         ServerConfigSection(
             serverType = formState.serverType,
             xiaoZhiConfig = formState.xiaoZhiConfig,
@@ -80,14 +73,13 @@ fun ServerFormScreen(
     }
 }
 
-// :feature:form/ui/components/ServerTypeSection.kt
 @Composable
 fun ServerTypeSection(
     selectedType: ServerType,
     onTypeSelected: (ServerType) -> Unit
 ) {
     Column {
-        Text("服务器类型", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.label_server_type), style = MaterialTheme.typography.headlineSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ServerType.entries.forEach { type ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -102,7 +94,6 @@ fun ServerTypeSection(
     }
 }
 
-// :feature:form/ui/components/ServerConfigSection.kt
 @Composable
 fun ServerConfigSection(
     serverType: ServerType,
@@ -118,18 +109,20 @@ fun ServerConfigSection(
                 OutlinedTextField(
                     value = xiaoZhiConfig.webSocketUrl,
                     onValueChange = { onXiaoZhiUpdate(xiaoZhiConfig.copy(webSocketUrl = it)) },
-                    label = { Text("WebSocket URL") },
+                    label = { Text(stringResource(R.string.label_websocket_url)) },
                     isError = errors.containsKey("xiaoZhiWebSocketUrl"),
-                    supportingText = { errors["xiaoZhiWebSocketUrl"]?.let { Text(it) } }
+                    supportingText = { errors["xiaoZhiWebSocketUrl"]?.let { Text(it) } },
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = xiaoZhiConfig.qtaUrl,
                     onValueChange = { onXiaoZhiUpdate(xiaoZhiConfig.copy(qtaUrl = it)) },
-                    label = { Text("QTA URL") },
+                    label = { Text(stringResource(R.string.label_qta_url)) },
                     isError = errors.containsKey("qtaUrl"),
-                    supportingText = { errors["qtaUrl"]?.let { Text(it) } }
+                    supportingText = { errors["qtaUrl"]?.let { Text(it) } },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Text("传输类型", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.label_transport_type), style = MaterialTheme.typography.bodyLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     TransportType.entries.forEach { type ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -148,11 +141,12 @@ fun ServerConfigSection(
                 OutlinedTextField(
                     value = selfHostConfig.webSocketUrl,
                     onValueChange = { onSelfHostUpdate(selfHostConfig.copy(webSocketUrl = it)) },
-                    label = { Text("WebSocket URL") },
+                    label = { Text(stringResource(R.string.label_websocket_url)) },
                     isError = errors.containsKey("selfHostWebSocketUrl"),
-                    supportingText = { errors["selfHostWebSocketUrl"]?.let { Text(it) } }
+                    supportingText = { errors["selfHostWebSocketUrl"]?.let { Text(it) } },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Text("传输类型: WebSockets (固定)", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.label_transport_websockets_fixed), style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
