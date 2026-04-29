@@ -1,4 +1,19 @@
 <resources>
     <string name="app_name">CompanionAI</string>
     <string name="label_conn">Connect</string>
+
+    <!-- Server Form -->
+    <string name="label_server_type">Server Type</string>
+    <string name="label_transport_type">Transport Type</string>
+    <string name="label_transport_websockets_fixed">Transport Type: WebSockets (fixed)</string>
+    <string name="label_websocket_url">WebSocket URL</string>
+    <string name="label_qta_url">QTA URL</string>
+
+    <!-- Status messages -->
+    <string name="msg_submit_success">Connected successfully</string>
+    <string name="msg_submit_error">Connection failed</string>
+
+    <!-- Validation errors -->
+    <string name="error_invalid_url">Invalid URL</string>
+    <string name="error_required">This field is required</string>
 </resources>
