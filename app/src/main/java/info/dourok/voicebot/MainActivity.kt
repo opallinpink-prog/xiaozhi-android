@@ -2,6 +2,7 @@ package info.dourok.voicebot
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -22,13 +23,16 @@ import info.dourok.voicebot.ui.ActivationScreen
 import info.dourok.voicebot.ui.ChatScreen
 import info.dourok.voicebot.ui.ServerFormScreen
 import info.dourok.voicebot.ui.theme.VoicebotclientandroidTheme
-import info.dourok.voicebot.ui.ChatViewModel // Fixed import path
+import info.dourok.voicebot.ui.ChatViewModel
+
+private const val PREFS_NAME = "companionai_prefs"
+private const val KEY_SERVER_TYPE = "server_type"
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 0)
         }
@@ -50,7 +54,8 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation() {
     val navController = rememberNavController()
     val activity = LocalContext.current as Activity
-    
+    val context = LocalContext.current
+
     val entryPoint = EntryPointAccessors.fromActivity(activity, NavigationEntryPoint::class.java)
     val navigationEvents = entryPoint.getNavigationEvents()
 
@@ -60,12 +65,16 @@ fun AppNavigation() {
         }
     }
 
-    NavHost(navController = navController, startDestination = "form") {
+    // Se esiste già una configurazione salvata, salta il form e vai alla chat
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val startDestination = if (prefs.contains(KEY_SERVER_TYPE)) "chat" else "form"
+
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("form") { ServerFormScreen() }
         composable("activation") { ActivationScreen() }
-        composable("chat") { 
+        composable("chat") {
             val chatViewModel: ChatViewModel = hiltViewModel()
-            ChatScreen(viewModel = chatViewModel) 
+            ChatScreen(viewModel = chatViewModel)
         }
     }
 }
