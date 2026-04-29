@@ -1,6 +1,5 @@
 package info.dourok.voicebot.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,68 +21,50 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlin.math.*
 
 // ---------------------------------------------------------------------------
-// ChatScreen — visualizer e chat completamente separati
+// ChatScreen
 // ---------------------------------------------------------------------------
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
-    // Collect separati: ogni blocco si recompone indipendentemente
     val deviceState       by viewModel.deviceStateFlow.collectAsState()
     val speakingAmplitude by viewModel.playerAmplitude.collectAsState()
     val micAmplitude      by viewModel.micAmplitude.collectAsState()
+    val messages          by viewModel.display.chatFlow.collectAsState()
 
-    var showChatMessages by remember { mutableStateOf(true) }
+    var showChat by remember { mutableStateOf(true) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // ── Visualizer: isolato, non risente dei recompose della chat ────────
+        // ── Visualizer ───────────────────────────────────────────────────────
         DynamicVisualizer(
             deviceState       = deviceState,
             speakingAmplitude = speakingAmplitude,
             micAmplitude      = micAmplitude
         )
 
-        // ── Toggle button in alto a destra ───────────────────────────────────
-        IconButton(
-            onClick  = { showChatMessages = !showChatMessages },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            Icon(
-                imageVector = if (showChatMessages) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                contentDescription = "Toggle Chat",
-                tint = Color.White
-            )
-        }
-
         // ── Chat overlay ─────────────────────────────────────────────────────
-        if (showChatMessages) {
-            // Collect messaggi solo quando la chat è visibile
-            val messages by viewModel.display.chatFlow.collectAsState()
+        if (showChat) {
             LazyColumn(
                 modifier       = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 56.dp, bottom = 16.dp),
                 reverseLayout  = true
             ) {
                 items(messages) { message ->
+                    val isUser = message.sender == "user"
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Surface(
                             shape    = MaterialTheme.shapes.medium,
-                            color    = if (message.isUser) Color(0xFF1E88E5) else Color(0xFF424242),
-                            modifier = Modifier.align(
-                                if (message.isUser) Alignment.CenterEnd else Alignment.CenterStart
-                            )
+                            color    = if (isUser) Color(0xFF1E88E5) else Color(0xFF424242),
+                            modifier = Modifier.align(if (isUser) Alignment.CenterEnd else Alignment.CenterStart)
                         ) {
                             Text(
-                                text     = message.content,
+                                text     = message.message,
                                 color    = Color.White,
                                 modifier = Modifier.padding(12.dp)
                             )
@@ -91,6 +72,18 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 }
             }
+        }
+
+        // ── Toggle occhio — sempre visibile sopra tutto ───────────────────────
+        IconButton(
+            onClick  = { showChat = !showChat },
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+        ) {
+            Icon(
+                imageVector        = if (showChat) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                contentDescription = "Toggle Chat",
+                tint               = Color.White
+            )
         }
     }
 }
@@ -129,9 +122,7 @@ fun StandbyVisualizer() {
         animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "pulse"
     )
-    // Lettura fuori dal Canvas → triggera recompose
     val h = hue; val p = pulse
-
     Canvas(modifier = Modifier.fillMaxSize()) {
         val cy     = size.height / 2f
         val lineH  = 5.dp.toPx() * p
@@ -157,15 +148,10 @@ fun ListeningVisualizer(micAmplitude: Float) {
     val dot0 by tr.animateFloat(0.3f, 1.0f, infiniteRepeatable(tween(600, delayMillis =   0, easing = FastOutSlowInEasing), RepeatMode.Reverse), "d0")
     val dot1 by tr.animateFloat(0.3f, 1.0f, infiniteRepeatable(tween(600, delayMillis = 200, easing = FastOutSlowInEasing), RepeatMode.Reverse), "d1")
     val dot2 by tr.animateFloat(0.3f, 1.0f, infiniteRepeatable(tween(600, delayMillis = 400, easing = FastOutSlowInEasing), RepeatMode.Reverse), "d2")
-
-    // micAmplitude arriva gia' come State dal ViewModel, lettura diretta
     val d0 = dot0; val d1 = dot1; val d2 = dot2; val mic = micAmplitude
-
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val cx      = size.width  / 2f
-        val cy      = size.height / 2f
-        val baseR   = 18.dp.toPx()
-        val spacing = 60.dp.toPx()
+        val cx = size.width / 2f; val cy = size.height / 2f
+        val baseR = 18.dp.toPx(); val spacing = 60.dp.toPx()
         listOf(d0 to -spacing, d1 to 0f, d2 to spacing).forEach { (scale, dx) ->
             drawCircle(
                 color  = Color(0xFFFF1744).copy(alpha = 0.5f + scale * 0.5f),
@@ -177,73 +163,76 @@ fun ListeningVisualizer(micAmplitude: Float) {
 }
 
 // ---------------------------------------------------------------------------
-// 3. SPEAKING — 3 colonne LED stile KITT
+// 3. SPEAKING — 3 colonne LED simmetriche stile KITT
+//    Le barre crescono dal centro verso l'alto E verso il basso ("bocca visiva")
+//    Più energia = più lunghe + più brillanti. Colonna centrale più reattiva.
 // ---------------------------------------------------------------------------
 
 @Composable
 fun SpeakingVisualizer(externalAmplitude: Float) {
-    // InfiniteTransition garantisce recompose frame-by-frame gestito da Compose
-    // Usiamo un float 0..1 che cicla in 4 secondi come "orologio"
     val tr = rememberInfiniteTransition(label = "kitt")
     val clock by tr.animateFloat(
-        initialValue  = 0f,
-        targetValue   = 4000f,
+        initialValue  = 0f, targetValue = 4000f,
         animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing), RepeatMode.Restart),
-        label         = "clock"
+        label = "clock"
     )
-
-    // Smooth dell'ampiezza: aggiornato ogni recompose (ogni frame)
     var smoothedAmp by remember { mutableFloatStateOf(0f) }
     smoothedAmp += (externalAmplitude - smoothedAmp) * 0.18f
-
-    // Lettura fuori dal Canvas per triggerare recompose
-    val t   = clock / 1000f   // secondi 0..4, ciclico
+    val t = clock / 1000f
     val amp = smoothedAmp
-
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        drawLedColumns(t, amp)
-    }
+    Canvas(modifier = Modifier.fillMaxSize()) { drawKittSymmetric(t, amp) }
 }
 
-private val LED_COLORS = listOf(
-    Color(0xFF003333),
-    Color(0xFF006666),
-    Color(0xFF009999),
-    Color(0xFF00CCCC),
-    Color(0xFF00FFFF),
-    Color(0xFFCCFFFF)
-)
+// Gradiente: centro scuro → estremi brillanti (simmetrico verticalmente)
+private val LED_DARK  = Color(0xFF003333)
+private val LED_MID   = Color(0xFF009999)
+private val LED_CYAN  = Color(0xFF00FFFF)
+private val LED_WHITE = Color(0xFFCCFFFF)
 
-private fun DrawScope.drawLedColumns(timeMs: Float, smoothedAmp: Float) {
-    val t           = timeMs  // già in secondi (0..4)
+private val LED_GRADIENT = listOf(LED_DARK, LED_MID, LED_CYAN, LED_WHITE)
+
+private fun DrawScope.drawKittSymmetric(t: Float, smoothedAmp: Float) {
     val columnCount = 3
-    val segmentRows = 24
+    val segRows     = 12   // 12 segmenti per metà (su + giù = 24 totali)
     val colW        = size.width * 0.18f
-    val totalColW   = colW * columnCount
-    val colSpacing  = (size.width - totalColW) / (columnCount + 1)
-    val maxH        = size.height * 0.80f
-    val segH        = maxH / segmentRows
+    val colSpacing  = (size.width - colW * columnCount) / (columnCount + 1)
+    val halfH       = size.height * 0.40f   // metà altezza disponibile (da centro verso bordo)
+    val segH        = halfH / segRows
     val segGap      = segH * 0.15f
     val segNet      = segH - segGap
-    val topY        = (size.height - maxH) / 2f
+    val centerY     = size.height / 2f
     val cr          = CornerRadius(2f)
 
-    val energy = if (smoothedAmp > 0.01f) smoothedAmp.coerceIn(0.1f, 1f)
-    else (0.40f + 0.28f * sin(t * 2.1f) + 0.16f * sin(t * 5.3f + 1.1f) +
-          0.16f * sin(t * 0.7f + 2.4f)).toFloat().coerceIn(0.15f, 1f)
+    // Energia globale
+    val energy = if (smoothedAmp > 0.01f) smoothedAmp.coerceIn(0.08f, 1f)
+    else (0.30f + 0.25f * sin(t * 2.1f) + 0.15f * sin(t * 5.3f + 1.1f) +
+          0.10f * sin(t * 0.7f + 2.4f)).toFloat().coerceIn(0.10f, 1f)
 
     for (col in 0 until columnCount) {
         val colX  = colSpacing + col * (colW + colSpacing)
+
+        // Colonna centrale (col=1) leggermente più reattiva — come KITT
+        val centerBoost = if (col == 1) 1.2f else 1.0f
         val phase = col * (PI / 3.0).toFloat()
         val noise = 0.5f + 0.3f * sin(t * 2.5f + phase) + 0.2f * sin(t * 6.1f + phase * 2f)
-        val colH  = (segmentRows * noise.coerceIn(0.15f, 1f) * energy).toInt().coerceIn(1, segmentRows)
 
-        for (row in 0 until segmentRows) {
-            val segY    = topY + (segmentRows - 1 - row) * segH + segGap / 2f
-            val lit     = row < colH
-            val frac    = row.toFloat() / (segmentRows - 1)
-            val segColor = lerpColorList(LED_COLORS, frac).let { if (lit) it else it.copy(alpha = 0.06f) }
-            drawRoundRect(color = segColor, topLeft = Offset(colX, segY), size = Size(colW, segNet), cornerRadius = cr)
+        // Numero di segmenti accesi per metà colonna (0..segRows)
+        val litCount = (segRows * noise.coerceIn(0.1f, 1f) * energy * centerBoost)
+            .toInt().coerceIn(1, segRows)
+
+        for (row in 0 until segRows) {
+            val lit      = row < litCount
+            // frac 0 = vicino al centro, 1 = all'estremo
+            val frac     = row.toFloat() / (segRows - 1)
+            val segColor = lerpColorList(LED_GRADIENT, frac).let { if (lit) it else it.copy(alpha = 0.05f) }
+
+            // Metà SUPERIORE: row 0 parte dal centro e va verso l'alto
+            val topSegY = centerY - (row + 1) * segH + segGap / 2f
+            drawRoundRect(segColor, Offset(colX, topSegY), Size(colW, segNet), cr)
+
+            // Metà INFERIORE: speculare
+            val botSegY = centerY + row * segH + segGap / 2f
+            drawRoundRect(segColor, Offset(colX, botSegY), Size(colW, segNet), cr)
         }
     }
 }
