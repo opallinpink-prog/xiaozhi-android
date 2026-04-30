@@ -27,6 +27,7 @@ import info.dourok.voicebot.ui.ChatViewModel
 
 private const val PREFS_NAME = "companionai_prefs"
 private const val KEY_SERVER_TYPE = "server_type"
+private const val KEY_XIAOZHI_TRANSPORT = "xiaozhi_transport"
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -65,9 +66,19 @@ fun AppNavigation() {
         }
     }
 
-    // Se esiste già una configurazione salvata, salta il form e vai alla chat
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val startDestination = if (prefs.contains(KEY_SERVER_TYPE)) "chat" else "form"
+    val hasConfig = prefs.contains(KEY_SERVER_TYPE)
+
+    // Se ci sono impostazioni salvate, controlla il tipo di trasporto:
+    // - WebSockets: i dati sono tutti nei prefs, si può andare diretto alla chat
+    // - MQTT: mqttConfig viene dall'OTA e non è persistibile facilmente,
+    //   quindi si mostra il form che eseguirà submitForm() ricaricando i campi
+    val savedTransport = prefs.getString(KEY_XIAOZHI_TRANSPORT, null)
+    val startDestination = when {
+        !hasConfig -> "form"
+        savedTransport == "MQTT" -> "form"  // MQTT richiede OTA, passa per il form
+        else -> "chat"                       // WebSockets: tutto nei prefs, vai in chat
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("form") { ServerFormScreen() }
